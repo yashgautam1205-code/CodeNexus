@@ -37,6 +37,16 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @field_validator("environment", mode="before")
+    @classmethod
+    def normalize_environment(cls, value):
+        if not isinstance(value, str):
+            return value
+        environment = value.strip().lower()
+        if environment not in {"development", "demo", "production"}:
+            raise ValueError("ENVIRONMENT must be development, demo, or production.")
+        return environment
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]

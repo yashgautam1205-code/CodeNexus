@@ -181,6 +181,70 @@ def test_production_configuration_requires_scanner_and_exact_https_origins():
         )
 
 
+def test_demo_configuration_does_not_require_clamav():
+    demo_settings = Settings(
+        environment="DEMO",
+        database_url="sqlite:///./brandguard.db",
+        jwt_secret_key="a-demo-secret-with-at-least-32-characters",
+        clamav_host="",
+    )
+
+    assert demo_settings.environment == "demo"
+    assert demo_settings.clamav_host == ""
+
+
+def test_demo_uploads_are_rejected_without_scanning_or_storage(
+    client, monkeypatch, tmp_path
+):
+    from app.core.rate_limit import auth_rate_limiter
+
+    monkeypatch.setattr(settings, "environment", "demo")
+    monkeypatch.setattr(settings, "clamav_host", "")
+    upload_directory = tmp_path / "uploads"
+    monkeypatch.setattr(settings, "upload_directory", str(upload_directory))
+    monkeypatch.setattr(
+        malware_scanner,
+        "scan_upload",
+        lambda _content: pytest.fail("Demo uploads must not reach the scanner."),
+    )
+    auth_rate_limiter.reset()
+    registration = client.post(
+        "/api/auth/register",
+        json={
+            "organization_name": "Demo Org",
+            "full_name": "Demo Owner",
+            "email": "demo-upload@example.com",
+            "password": "secure-demo-upload-password-123",
+        },
+    )
+    headers = {"Authorization": f"Bearer {registration.json()['access_token']}"}
+
+    for endpoint in ("/api/content/upload", "/api/guidelines/upload"):
+        response = client.post(
+            endpoint,
+            headers=headers,
+            files={"file": ("sample.txt", b"Demo upload content.", "text/plain")},
+        )
+        assert response.status_code == 503
+        assert response.json()["detail"] == (
+            "File uploads are disabled in demo mode to avoid accepting files without antivirus scanning."
+        )
+
+    assert client.get("/api/content", headers=headers).json() == []
+    assert not upload_directory.exists()
+
+
+def test_production_scan_without_clamav_fails_closed(monkeypatch):
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "clamav_host", "")
+
+    with pytest.raises(
+        malware_scanner.MalwareScannerUnavailableError,
+        match="required in production",
+    ):
+        malware_scanner.scan_upload(b"file bytes")
+
+
 def test_upload_fails_closed_when_malware_scanner_is_unavailable(
     client, monkeypatch, tmp_path
 ):

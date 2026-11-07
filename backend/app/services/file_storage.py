@@ -10,6 +10,8 @@ from app.core.config import settings
 from app.services.malware_scanner import (
     MalwareDetectedError,
     MalwareScannerUnavailableError,
+    UploadsDisabledError,
+    ensure_uploads_enabled,
     scan_upload,
 )
 
@@ -26,6 +28,11 @@ async def read_validated_upload(
     upload: UploadFile,
     allowed_extensions: set[str],
 ) -> tuple[str, bytes]:
+    try:
+        ensure_uploads_enabled()
+    except UploadsDisabledError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     filename = safe_filename(upload.filename or "")
     extension = Path(filename).suffix.lower()
     if extension not in allowed_extensions:
@@ -43,6 +50,8 @@ async def read_validated_upload(
         await asyncio.to_thread(scan_upload, content)
     except MalwareDetectedError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except UploadsDisabledError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except MalwareScannerUnavailableError as exc:
         logger.exception("Upload malware scanning is unavailable")
         raise HTTPException(

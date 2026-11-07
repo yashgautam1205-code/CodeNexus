@@ -4,23 +4,13 @@ services:
     runtime: docker
     rootDir: backend
     dockerfilePath: ./Dockerfile
-    plan: starter
+    plan: free
     healthCheckPath: /api/health/database
-    disk:
-      name: brandguard-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: ENVIRONMENT
-        value: production
+        value: demo
       - key: DATABASE_URL
         sync: false
-      - key: CLAMAV_HOST
-        sync: false
-      - key: CLAMAV_PORT
-        value: 3310
-      - key: CLAMAV_TIMEOUT_SECONDS
-        value: 10
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: GEMINI_API_KEY
@@ -30,8 +20,8 @@ services:
       - key: ALLOWED_ORIGINS
         sync: false
       - key: UPLOAD_DIRECTORY
-        value: /var/data/uploads
+        value: /tmp/brandguard-uploads
       - key: CHROMA_PERSIST_DIRECTORY
-        value: /var/data/chroma_db
+        value: /tmp/brandguard-chroma
       - key: EMBEDDING_MODEL
         value: all-MiniLM-L6-v2
