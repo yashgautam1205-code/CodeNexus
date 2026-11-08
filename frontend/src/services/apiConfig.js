@@ -2,6 +2,8 @@ const DEFAULT_API_TIMEOUT_MS = 15_000;
 const DEFAULT_AI_REQUEST_TIMEOUT_MS = 130_000;
 const MAX_TIMEOUT_MS = 300_000;
 
+export const LOGIN_REQUEST_TIMEOUT_MS = 90_000;
+
 function timeoutValue(name, value, defaultValue) {
   if (value === undefined || value === "") return defaultValue;
 

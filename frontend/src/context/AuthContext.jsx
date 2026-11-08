@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "../services/api";
+import { LOGIN_REQUEST_TIMEOUT_MS } from "../services/apiConfig";
 
 const AuthContext = createContext(null);
 const TOKEN_KEY = "brandguard.accessToken";
@@ -23,8 +24,8 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  async function authenticate(path, payload) {
-    const { data } = await api.post(path, payload);
+  async function authenticate(path, payload, config) {
+    const { data } = await api.post(path, payload, config);
     localStorage.setItem(TOKEN_KEY, data.access_token);
     setUser(data.user);
     return data.user;
@@ -38,7 +39,8 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => ({
     user,
     loading,
-    login: (payload) => authenticate("/api/auth/login", payload),
+    login: (payload) =>
+      authenticate("/api/auth/login", payload, { timeout: LOGIN_REQUEST_TIMEOUT_MS }),
     register: (payload) => authenticate("/api/auth/register", payload),
     logout,
   }), [user, loading]);

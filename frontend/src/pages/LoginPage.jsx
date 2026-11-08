@@ -59,6 +59,11 @@ export default function LoginPage() {
           />
         </div>
         <div className="pt-2">
+          {busy && (
+            <p role="status" className="mb-3 text-center text-xs text-slate-400">
+              Connecting to server... This may take up to a minute on the first request.
+            </p>
+          )}
           <Button className="w-full py-2.5 font-bold shadow-lg shadow-blue-900/40" type="submit" disabled={busy}>
             {busy ? "Signing in..." : "Sign in to Workspace"} <ArrowRight size={15} />
           </Button>

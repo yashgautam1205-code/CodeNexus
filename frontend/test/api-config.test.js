@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveApiConfig } from "../src/services/apiConfig.js";
+import {
+  LOGIN_REQUEST_TIMEOUT_MS,
+  resolveApiConfig,
+} from "../src/services/apiConfig.js";
 
 test("uses the development proxy and configured normal/AI timeouts", () => {
   assert.deepEqual(
@@ -23,6 +26,7 @@ test("uses safe default timeouts when no override is provided", () => {
     timeout: 15_000,
     aiRequestTimeout: 130_000,
   });
+  assert.equal(LOGIN_REQUEST_TIMEOUT_MS, 90_000);
 });
 
 test("requires a production API origin and rejects unsafe production URLs", () => {
