@@ -5,6 +5,7 @@ from time import perf_counter
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.diagnostics import log_exception_trace
 from app.api.auth import router as auth_router
 from app.api.content import router as content_router
 from app.api.analysis import router as analysis_router
@@ -47,19 +48,20 @@ async def log_login_requests(request: Request, call_next):
         return await call_next(request)
 
     started_at = perf_counter()
-    logger.info("event=login_request_received")
+    logger.info("event=login_request_received elapsed_ms=0")
     try:
         response = await call_next(request)
     except Exception as exc:
-        logger.error(
-            "event=login_request_failed duration_ms=%d exception_type=%s",
-            round((perf_counter() - started_at) * 1000),
-            type(exc).__name__,
+        log_exception_trace(
+            logger,
+            "event=login_request_failed",
+            exc,
+            duration_ms=round((perf_counter() - started_at) * 1000),
         )
         raise
 
     logger.info(
-        "event=login_request_completed status_code=%d duration_ms=%d",
+        "event=login_response_returned status_code=%d duration_ms=%d",
         response.status_code,
         round((perf_counter() - started_at) * 1000),
     )

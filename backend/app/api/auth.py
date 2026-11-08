@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, require_roles
+from app.core.diagnostics import log_exception_trace
 from app.core.rate_limit import limit_login_attempts, limit_registration_attempts
 from app.core.security import create_access_token, hash_password, verify_password
 from app.database.session import get_db
@@ -62,10 +63,35 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     started_at = perf_counter()
     logger.info("event=login_started")
 
-    query_started_at = perf_counter()
-    user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    connection_started_at = perf_counter()
+    try:
+        db.connection()
+    except Exception as exc:
+        log_exception_trace(
+            logger,
+            "event=login_database_connection_failed",
+            exc,
+            duration_ms=round((perf_counter() - connection_started_at) * 1000),
+        )
+        raise
     logger.info(
-        "event=login_user_query_completed duration_ms=%d",
+        "event=login_database_connection_acquired duration_ms=%d",
+        round((perf_counter() - connection_started_at) * 1000),
+    )
+
+    query_started_at = perf_counter()
+    try:
+        user = db.scalar(select(User).where(User.email == payload.email.lower()))
+    except Exception as exc:
+        log_exception_trace(
+            logger,
+            "event=login_user_lookup_failed",
+            exc,
+            duration_ms=round((perf_counter() - query_started_at) * 1000),
+        )
+        raise
+    logger.info(
+        "event=login_user_lookup_completed duration_ms=%d",
         round((perf_counter() - query_started_at) * 1000),
     )
     if user is None:
@@ -77,7 +103,16 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         )
 
     verification_started_at = perf_counter()
-    password_matches = verify_password(payload.password, user.password_hash)
+    try:
+        password_matches = verify_password(payload.password, user.password_hash)
+    except Exception as exc:
+        log_exception_trace(
+            logger,
+            "event=login_password_verification_failed",
+            exc,
+            duration_ms=round((perf_counter() - verification_started_at) * 1000),
+        )
+        raise
     logger.info(
         "event=login_password_verification_completed duration_ms=%d",
         round((perf_counter() - verification_started_at) * 1000),
@@ -90,9 +125,30 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    token_started_at = perf_counter()
+    try:
+        access_token = create_access_token(user.id)
+    except Exception as exc:
+        log_exception_trace(
+            logger,
+            "event=login_jwt_generation_failed",
+            exc,
+            duration_ms=round((perf_counter() - token_started_at) * 1000),
+        )
+        raise
+    logger.info(
+        "event=login_jwt_generation_completed duration_ms=%d",
+        round((perf_counter() - token_started_at) * 1000),
+    )
+
+    response_started_at = perf_counter()
     response = AuthResponse(
-        access_token=create_access_token(user.id),
+        access_token=access_token,
         user=user_response(user),
+    )
+    logger.info(
+        "event=login_response_payload_completed duration_ms=%d",
+        round((perf_counter() - response_started_at) * 1000),
     )
     logger.info(
         "event=login_succeeded duration_ms=%d",
