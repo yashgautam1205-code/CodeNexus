@@ -4,9 +4,7 @@ import {
   BookOpen,
   CheckCircle2,
   Clock,
-  ExternalLink,
   FileEdit,
-  HelpCircle,
   LayoutDashboard,
   ListChecks,
   LogOut,
@@ -18,7 +16,7 @@ import {
 } from "lucide-react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
-import { API_DOCS_URL, api, fetchHealth } from "../services/api";
+import { api } from "../services/api";
 
 const navigation = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -33,17 +31,11 @@ export default function AppLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [apiOnline, setApiOnline] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showHelpModal, setShowHelpModal] = useState(false);
 
   useEffect(() => {
     let active = true;
-    fetchHealth()
-      .then(() => active && setApiOnline(true))
-      .catch(() => active && setApiOnline(false));
-
     // Fetch live pending reviews count
     api.get("/api/dashboard/overview", { params: { days: "30" } })
       .then(({ data }) => {
@@ -153,15 +145,6 @@ export default function AppLayout() {
             <Settings size={17} strokeWidth={1.8} />
             <span>Settings</span>
           </NavLink>
-
-          <button
-            type="button"
-            onClick={() => setShowHelpModal(true)}
-            className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2 text-sm font-medium text-slate-400 hover:bg-navy-850 hover:text-white transition-colors text-left"
-          >
-            <HelpCircle size={17} strokeWidth={1.8} />
-            <span>Help & Support</span>
-          </button>
 
           {/* User Profile Card */}
           <div className="mt-4 rounded-xl border border-navy-750 bg-navy-850/80 p-2.5 shadow-sm">
@@ -294,59 +277,6 @@ export default function AppLayout() {
         </main>
       </div>
 
-      {/* Help & Support Modal */}
-      {showHelpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-navy-700 bg-navy-850 p-6 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5 font-bold text-white text-lg">
-                <HelpCircle size={20} className="text-blue-400" />
-                <span>BrandGuard AI Support</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowHelpModal(false)}
-                className="rounded-lg p-1 text-slate-400 hover:text-white"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="mt-4 space-y-3 text-xs text-slate-300 leading-relaxed">
-              <p>
-                <strong className="text-white">BrandGuard AI</strong> governs brand compliance across all marketing copy, guidelines, and assets using verified rules and evidence.
-              </p>
-              <div className="rounded-xl border border-navy-700 bg-navy-800/80 p-3">
-                <p className="font-semibold text-blue-300 mb-1">API Status</p>
-                <div className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${apiOnline ? "bg-emerald-400" : "bg-rose-400"}`} />
-                  <span>{apiOnline ? "Connected & Healthy" : "Offline / Unreachable"}</span>
-                </div>
-              </div>
-              <p>
-                To explore or test backend routes and schemas, check the OpenAPI documentation below:
-              </p>
-              <a
-                href={API_DOCS_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 rounded-xl border border-navy-600 bg-navy-800 px-3.5 py-2 font-medium text-white hover:bg-navy-700 transition"
-              >
-                <span>Interactive Swagger API Docs</span>
-                <ExternalLink size={14} />
-              </a>
-            </div>
-            <div className="mt-6 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowHelpModal(false)}
-                className="rounded-xl bg-navy-700 px-4 py-2 text-xs font-semibold text-white hover:bg-navy-650"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
