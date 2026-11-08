@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
+import logging
+from time import perf_counter
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import router as auth_router
@@ -13,6 +15,8 @@ from app.api.health import router as health_router
 from app.api.reviews import router as reviews_router
 from app.core.config import settings
 from app.database.session import Base, engine
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -35,6 +39,32 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_login_requests(request: Request, call_next):
+    if request.method != "POST" or request.url.path != "/api/auth/login":
+        return await call_next(request)
+
+    started_at = perf_counter()
+    logger.info("event=login_request_received")
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        logger.error(
+            "event=login_request_failed duration_ms=%d exception_type=%s",
+            round((perf_counter() - started_at) * 1000),
+            type(exc).__name__,
+        )
+        raise
+
+    logger.info(
+        "event=login_request_completed status_code=%d duration_ms=%d",
+        response.status_code,
+        round((perf_counter() - started_at) * 1000),
+    )
+    return response
+
 
 app.include_router(health_router)
 app.include_router(auth_router)

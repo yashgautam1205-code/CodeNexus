@@ -1,3 +1,6 @@
+import logging
+from time import perf_counter
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,6 +14,7 @@ from app.schemas.auth import AuthResponse, LoginRequest, RegisterRequest, UserCr
 from app.services.audit import record_audit
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
+logger = logging.getLogger(__name__)
 
 
 def user_response(user: User) -> UserRead:
@@ -55,14 +59,46 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     dependencies=[Depends(limit_login_attempts)],
 )
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    started_at = perf_counter()
+    logger.info("event=login_started")
+
+    query_started_at = perf_counter()
     user = db.scalar(select(User).where(User.email == payload.email.lower()))
-    if user is None or not verify_password(payload.password, user.password_hash) or not user.is_active:
+    logger.info(
+        "event=login_user_query_completed duration_ms=%d",
+        round((perf_counter() - query_started_at) * 1000),
+    )
+    if user is None:
+        logger.info("event=login_rejected reason=invalid_credentials")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return AuthResponse(access_token=create_access_token(user.id), user=user_response(user))
+
+    verification_started_at = perf_counter()
+    password_matches = verify_password(payload.password, user.password_hash)
+    logger.info(
+        "event=login_password_verification_completed duration_ms=%d",
+        round((perf_counter() - verification_started_at) * 1000),
+    )
+    if not password_matches or not user.is_active:
+        logger.info("event=login_rejected reason=invalid_credentials")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    response = AuthResponse(
+        access_token=create_access_token(user.id),
+        user=user_response(user),
+    )
+    logger.info(
+        "event=login_succeeded duration_ms=%d",
+        round((perf_counter() - started_at) * 1000),
+    )
+    return response
 
 
 @router.get("/me", response_model=UserRead)

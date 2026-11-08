@@ -1,3 +1,6 @@
+import logging
+
+
 def register_admin(client):
     response = client.post(
         "/api/auth/register",
@@ -10,6 +13,30 @@ def register_admin(client):
     )
     assert response.status_code == 201
     return response.json()["access_token"]
+
+
+def test_login_succeeds_and_logs_no_credentials_or_tokens(client, caplog):
+    email = "admin@acme.com"
+    password = "secure-admin-password-123"
+    register_admin(client)
+
+    with caplog.at_level(logging.INFO):
+        response = client.post(
+            "/api/auth/login",
+            json={"email": email, "password": password},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["user"]["email"] == email
+    assert "login_started" in caplog.text
+    assert "login_request_received" in caplog.text
+    assert "login_request_completed status_code=200" in caplog.text
+    assert "login_user_query_completed" in caplog.text
+    assert "login_password_verification_completed" in caplog.text
+    assert "login_succeeded" in caplog.text
+    assert email not in caplog.text
+    assert password not in caplog.text
+    assert response.json()["access_token"] not in caplog.text
 
 
 def test_admin_can_create_tenant_user_and_assign_reviewer_role(client):
