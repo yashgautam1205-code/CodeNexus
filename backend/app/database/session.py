@@ -10,10 +10,8 @@ engine_options = {
     "echo": settings.sqlalchemy_echo,
 }
 if settings.database_url.startswith("postgresql+psycopg://"):
-    engine_options.update(
-        connect_args={"connect_timeout": 5},
-        pool_timeout=5,
-    )
+    connect_args["connect_timeout"] = 5
+    engine_options["pool_timeout"] = 5
 
 engine = create_engine(
     settings.database_url,
