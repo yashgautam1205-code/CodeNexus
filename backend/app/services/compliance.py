@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 
@@ -9,9 +10,12 @@ from app.models.entities import (
     AnalysisResult,
     BrandGuideline,
     BrandRule,
+    ClaimVerificationRecord,
     ContentSubmission,
     User,
     Violation,
+    VisualAnalysisRecord,
+    VisualReviewHistory,
 )
 from app.rag.guideline_index import (
     MAX_RETRIEVAL_DISTANCE,
@@ -19,6 +23,11 @@ from app.rag.guideline_index import (
     retrieve_guideline_chunks,
 )
 from app.services.audit import record_audit
+from app.services.evidence_verification import verify_claims_with_external_sources
+from app.services.verification_persistence import (
+    persist_claim_verifications,
+    serialize_claim_verification,
+)
 
 logger = logging.getLogger(__name__)
 SEVERITY_WEIGHTS = {"critical": 25, "high": 15, "medium": 8, "low": 3}
@@ -198,6 +207,109 @@ def run_analysis(db: Session, user: User, submission: ContentSubmission) -> Anal
     else:
         notes.append("Gemini is not configured; deterministic checks only.")
 
+    claim_evidence = [
+        {
+            "id": rule.id,
+            "title": rule.title,
+            "text": rule.rule_text,
+            "guideline_id": rule.guideline_id,
+            "source_section": rule.source_section,
+            "source_page": rule.source_page,
+            "source_type": "internal",
+            "source_title": rule.guideline.title if rule.guideline else None,
+            "created_at": (
+                rule.guideline.created_at.isoformat()
+                if rule.guideline and rule.guideline.created_at
+                else None
+            ),
+        }
+        for rule in rules
+    ]
+    claim_verifications = verify_claims_with_external_sources(
+        submission.extracted_text, claim_evidence
+    )
+    for claim_result in claim_verifications:
+        matched = [
+            finding
+            for finding in findings
+            if finding["category"] == "unsupported_claim"
+            and finding["affected_text"].casefold()
+            in claim_result["claim_text"].casefold()
+        ]
+        if claim_result["status"] == "supported":
+            findings = [finding for finding in findings if finding not in matched]
+        elif claim_result["status"] == "contradicted" and matched:
+            has_deterministic_rule_finding = any(
+                finding["category"] == "prohibited_terminology"
+                and finding["affected_text"].casefold()
+                in claim_result["claim_text"].casefold()
+                for finding in findings
+            )
+            if has_deterministic_rule_finding:
+                findings = [finding for finding in findings if finding not in matched]
+                continue
+            for finding in matched:
+                finding["evidence_status"] = "contradicted"
+                finding["confidence"] = claim_result["confidence"]
+                finding["explanation"] = claim_result["reason"]
+                source = next(
+                    (
+                        item
+                        for item in claim_result["evidence"]
+                        if item.get("evidence_relation") == "contradicting"
+                        or item.get("source_type") == "internal"
+                    ),
+                    None,
+                )
+                finding["source_rule"] = (
+                    source
+                    if source and source.get("source_type") != "external"
+                    else None
+                )
+                finding["external_evidence_text"] = (
+                    source.get("text")
+                    if source and source.get("source_type") == "external"
+                    else None
+                )
+        elif claim_result["status"] == "contradicted":
+            if any(
+                finding["category"] == "prohibited_terminology"
+                and finding["affected_text"].casefold()
+                in claim_result["claim_text"].casefold()
+                for finding in findings
+            ):
+                continue
+            source = next(
+                (
+                    item
+                    for item in claim_result["evidence"]
+                    if item.get("evidence_relation") == "contradicting"
+                    or item.get("source_type") == "internal"
+                ),
+                None,
+            )
+            findings.append(
+                {
+                    "category": "unsupported_claim",
+                    "affected_text": claim_result["claim_text"],
+                    "explanation": claim_result["reason"],
+                    "severity": "medium",
+                    "confidence": claim_result["confidence"],
+                    "evidence_status": "contradicted",
+                    "source_rule": (
+                        source
+                        if source and source.get("source_type") != "external"
+                        else None
+                    ),
+                    "external_evidence_text": (
+                        source.get("text")
+                        if source and source.get("source_type") == "external"
+                        else None
+                    ),
+                    "suggested_correction": "Revise the claim or provide relevant, current evidence.",
+                }
+            )
+
     analysis = AnalysisResult(
         organization_id=user.organization_id,
         submission_id=submission.id,
@@ -210,6 +322,13 @@ def run_analysis(db: Session, user: User, submission: ContentSubmission) -> Anal
     db.add(analysis)
     db.flush()
     record_audit(db, user, "analysis.run", "analysis_result", analysis.id)
+    persist_claim_verifications(
+        db,
+        user,
+        claim_verifications,
+        submission_id=submission.id,
+        analysis_id=analysis.id,
+    )
     for finding in findings:
         rule = finding["source_rule"]
         db.add(
@@ -223,7 +342,11 @@ def run_analysis(db: Session, user: User, submission: ContentSubmission) -> Anal
                 severity=finding["severity"],
                 confidence=finding["confidence"],
                 evidence_status=finding["evidence_status"],
-                evidence_text=rule["text"] if isinstance(rule, dict) else rule.rule_text if rule else None,
+                evidence_text=(
+                    rule["text"] if isinstance(rule, dict) else rule.rule_text
+                )
+                if rule
+                else finding.get("external_evidence_text"),
                 source_guideline_id=(
                     rule["guideline_id"] if isinstance(rule, dict) else rule.guideline_id
                 )
@@ -264,6 +387,52 @@ def serialize_analysis(db: Session, analysis: AnalysisResult) -> dict:
             )
         )
     }
+    claim_records = db.scalars(
+        select(ClaimVerificationRecord)
+        .where(
+            ClaimVerificationRecord.analysis_id == analysis.id,
+            ClaimVerificationRecord.organization_id == analysis.organization_id,
+        )
+        .order_by(ClaimVerificationRecord.created_at.asc())
+    ).all()
+    visual_records = db.scalars(
+        select(VisualAnalysisRecord)
+        .where(
+            VisualAnalysisRecord.submission_id == analysis.submission_id,
+            VisualAnalysisRecord.organization_id == analysis.organization_id,
+        )
+        .order_by(VisualAnalysisRecord.created_at.asc())
+    ).all()
+    visual_analyses = []
+    for record in visual_records:
+        visual_report = json.loads(record.result_json)
+        review_history = db.scalars(
+            select(VisualReviewHistory)
+            .where(
+                VisualReviewHistory.visual_analysis_id == record.id,
+                VisualReviewHistory.organization_id == analysis.organization_id,
+            )
+            .order_by(VisualReviewHistory.created_at.asc())
+        ).all()
+        visual_report.update(
+            {
+                "analysis_id": record.id,
+                "asset_id": record.asset_id,
+                "submission_id": record.submission_id,
+                "review_status": record.review_status,
+                "review_history": [
+                    {
+                        "decision": entry.decision,
+                        "previous_status": entry.previous_status,
+                        "new_status": entry.new_status,
+                        "comment": entry.comment,
+                        "created_at": entry.created_at,
+                    }
+                    for entry in review_history
+                ],
+            }
+        )
+        visual_analyses.append(visual_report)
     return {
         "id": analysis.id,
         "submission_id": analysis.submission_id,
@@ -294,4 +463,8 @@ def serialize_analysis(db: Session, analysis: AnalysisResult) -> dict:
             }
             for finding in findings
         ],
+        "claim_verifications": [
+            serialize_claim_verification(db, record) for record in claim_records
+        ],
+        "visual_analyses": visual_analyses,
     }

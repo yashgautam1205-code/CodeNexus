@@ -56,6 +56,8 @@ class AnalysisRead(BaseModel):
     score_formula: str
     created_at: datetime
     findings: list[FindingRead]
+    claim_verifications: list[dict] = Field(default_factory=list)
+    visual_analyses: list[dict] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 

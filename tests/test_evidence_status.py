@@ -131,3 +131,38 @@ def test_gemini_client_uses_configured_request_timeout(monkeypatch):
     gemini._client()
 
     assert captured["http_options"].timeout == 2345
+    assert captured["http_options"].retry_options.attempts == settings.gemini_retry_attempts
+    assert 503 in captured["http_options"].retry_options.http_status_codes
+
+
+def test_gemini_retries_transient_transport_error_with_real_fallback_model(monkeypatch):
+    from httpx import TimeoutException
+
+    from app.ai import gemini
+    from app.core.config import settings
+
+    calls = []
+
+    class FakeModels:
+        def generate_content(self, *, model, contents, config):
+            calls.append(model)
+            if model == "primary-model":
+                raise TimeoutException("request timed out")
+            return object()
+
+    class FakeClient:
+        models = FakeModels()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(settings, "gemini_api_key", "test-key")
+    monkeypatch.setattr(settings, "gemini_model", "primary-model")
+    monkeypatch.setattr(settings, "gemini_fallback_model", "fallback-model")
+    monkeypatch.setattr(gemini, "_client", lambda: FakeClient())
+
+    response, model = gemini._generate_content("claim and retrieved sources", config={})
+
+    assert response is not None
+    assert model == "fallback-model"
+    assert calls == ["primary-model", "fallback-model"]

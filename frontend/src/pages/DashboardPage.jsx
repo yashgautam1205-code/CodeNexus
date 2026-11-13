@@ -8,8 +8,6 @@ import {
   FileText,
   ShieldAlert,
   Sparkles,
-  TrendingDown,
-  TrendingUp,
   Upload,
 } from "lucide-react";
 import {
@@ -38,23 +36,45 @@ const severityColors = {
 export default function DashboardPage() {
   const { user } = useAuth();
   const [overview, setOverview] = useState(null);
-  const [filters, setFilters] = useState({ days: "30", review_status: "", severity: "" });
+  const [analytics, setAnalytics] = useState(null);
+  const [filters, setFilters] = useState({
+    days: "30",
+    granularity: "daily",
+    review_status: "",
+    severity: "",
+    category: "",
+    reviewer_id: "",
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showNotifications, setShowNotifications] = useState(false);
 
   useEffect(() => {
     let active = true;
-    const params = { days: filters.days };
+    const params = { days: filters.days, granularity: filters.granularity };
     if (filters.review_status) params.review_status = filters.review_status;
     if (filters.severity) params.severity = filters.severity;
+    if (filters.category) params.category = filters.category;
+    if (filters.reviewer_id) params.reviewer_id = filters.reviewer_id;
+    setLoading(true);
+    setError("");
 
-    api.get("/api/dashboard/overview", { params })
-      .then(({ data }) => {
-        if (active) setOverview(data);
+    Promise.all([
+      api.get("/api/dashboard/overview", { params }),
+      api.get("/api/dashboard/analytics", { params }),
+    ])
+      .then(([overviewResponse, analyticsResponse]) => {
+        if (active) {
+          setOverview(overviewResponse.data);
+          setAnalytics(analyticsResponse.data);
+        }
       })
       .catch((requestError) => {
-        if (active) setError(getErrorMessage(requestError, "Dashboard data could not be loaded."));
+        if (active) {
+          setError(getErrorMessage(requestError, "Dashboard data could not be loaded."));
+          setOverview(null);
+          setAnalytics(null);
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -63,45 +83,31 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [filters.days, filters.review_status, filters.severity]);
+  }, [
+    filters.days,
+    filters.granularity,
+    filters.review_status,
+    filters.severity,
+    filters.category,
+    filters.reviewer_id,
+  ]);
 
   // Transform trend data from API
   const trendData = useMemo(() => {
-    if (!overview?.compliance_trend || overview.compliance_trend.length === 0) {
-      // Provide fallback trend shape based on submissions if empty
-      return [
-        { label: "Week 1", total: 45, compliant: 32 },
-        { label: "Week 2", total: 68, compliant: 54 },
-        { label: "Week 3", total: 95, compliant: 78 },
-        { label: "Week 4", total: overview?.total_submissions || 124, compliant: overview?.approved_content || 98 },
-      ];
-    }
-
-    return overview.compliance_trend.map((item, idx) => {
+    return (overview?.compliance_trend || []).map((item, idx) => {
       const label = item.date
         ? new Date(item.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
         : `Pt ${idx + 1}`;
-      const score = Math.round(item.average_score || 0);
-      // Derive compliant vs total scaling
-      const totalEstimated = Math.max(20, Math.round((overview.total_submissions || 100) * ((idx + 1) / overview.compliance_trend.length)));
-      const compliantEstimated = Math.round(totalEstimated * (score / 100));
       return {
         label,
-        total: totalEstimated,
-        compliant: compliantEstimated,
-        average_score: score,
+        average_score: Math.round(item.average_score || 0),
       };
     });
   }, [overview]);
 
   // Transform severity distribution data for Donut Chart
   const { donutData, totalIssues, severityStats } = useMemo(() => {
-    const raw = overview?.severity_distribution || {
-      critical: 6,
-      high: 8,
-      medium: 7,
-      low: 5,
-    };
+    const raw = overview?.severity_distribution || {};
 
     const total = (raw.critical || 0) + (raw.high || 0) + (raw.medium || 0) + (raw.low || 0);
     const data = [
@@ -122,6 +128,8 @@ export default function DashboardPage() {
   }, [overview]);
 
   const firstName = user?.full_name ? user.full_name.split(" ")[0] : "Sarah";
+  const pendingReviewItems =
+    analytics?.review_backlog?.total_action_required ?? overview?.pending_reviews ?? 0;
 
   function formatTimeAgo(isoString) {
     if (!isoString) return "just now";
@@ -148,9 +156,19 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {/* Days Filter Dropdown */}
           <div className="relative">
+            <select
+              aria-label="Trend interval"
+              value={filters.granularity}
+              onChange={(e) => setFilters({ ...filters, granularity: e.target.value })}
+              className="rounded-xl border border-navy-700 bg-navy-850 px-3.5 py-2 text-xs font-semibold text-slate-200 outline-none focus:border-blue-500"
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
             <select
               aria-label="Filter overview by date range"
               value={filters.days}
@@ -162,6 +180,54 @@ export default function DashboardPage() {
               <option value="90">Last 90 days</option>
             </select>
           </div>
+          <select
+            aria-label="Filter by review status"
+            value={filters.review_status}
+            onChange={(e) => setFilters({ ...filters, review_status: e.target.value })}
+            className="rounded-xl border border-navy-700 bg-navy-850 px-3.5 py-2 text-xs font-semibold text-slate-200 outline-none focus:border-blue-500"
+          >
+            <option value="">All review statuses</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+            <option value="revision_requested">Revision requested</option>
+          </select>
+          <select
+            aria-label="Filter by severity"
+            value={filters.severity}
+            onChange={(e) => setFilters({ ...filters, severity: e.target.value })}
+            className="rounded-xl border border-navy-700 bg-navy-850 px-3.5 py-2 text-xs font-semibold text-slate-200 outline-none focus:border-blue-500"
+          >
+            <option value="">All severities</option>
+            {["critical", "high", "medium", "low"].map((value) => (
+              <option key={value} value={value}>{value[0].toUpperCase() + value.slice(1)}</option>
+            ))}
+          </select>
+          <select
+            aria-label="Filter by violation category"
+            value={filters.category}
+            onChange={(e) => setFilters({ ...filters, category: e.target.value })}
+            className="rounded-xl border border-navy-700 bg-navy-850 px-3.5 py-2 text-xs font-semibold text-slate-200 outline-none focus:border-blue-500"
+          >
+            <option value="">All categories</option>
+            {filters.category && !analytics?.issue_categories?.[filters.category] && (
+              <option value={filters.category}>{filters.category.replaceAll("_", " ")}</option>
+            )}
+            {Object.keys(analytics?.issue_categories || {}).map((category) => (
+              <option key={category} value={category}>{category.replaceAll("_", " ")}</option>
+            ))}
+          </select>
+          <select
+            aria-label="Filter by reviewer"
+            value={filters.reviewer_id}
+            onChange={(e) => setFilters({ ...filters, reviewer_id: e.target.value })}
+            className="rounded-xl border border-navy-700 bg-navy-850 px-3.5 py-2 text-xs font-semibold text-slate-200 outline-none focus:border-blue-500"
+          >
+            <option value="">All reviewers</option>
+            {analytics?.reviewers?.map((reviewer) => (
+              <option key={reviewer.reviewer_id} value={reviewer.reviewer_id}>{reviewer.reviewer_name}</option>
+            ))}
+          </select>
 
           {/* Notification Bell */}
           <div className="relative">
@@ -173,10 +239,6 @@ export default function DashboardPage() {
               className="relative rounded-xl border border-navy-700 bg-navy-850 p-2 text-slate-300 hover:border-navy-600 hover:text-white transition shadow-sm"
             >
               <Bell size={18} />
-              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
-              </span>
             </button>
 
             {/* Notification Popover */}
@@ -199,7 +261,7 @@ export default function DashboardPage() {
                       </div>
                     ))
                   ) : (
-                    <p className="text-xs text-slate-400 py-3 text-center">No unread alerts.</p>
+                    <p className="text-xs text-slate-400 py-3 text-center">No recent activity to show.</p>
                   )}
                 </div>
               </div>
@@ -227,9 +289,6 @@ export default function DashboardPage() {
                   <span className="text-2xl font-bold text-white tracking-tight">
                     {overview.total_submissions}
                   </span>
-                  <span className="inline-flex items-center text-[11px] font-semibold text-blue-400">
-                    <TrendingUp size={12} className="mr-0.5" /> +12%
-                  </span>
                 </div>
               </div>
             </div>
@@ -244,9 +303,6 @@ export default function DashboardPage() {
                 <div className="mt-1 flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-white tracking-tight">
                     {overview.approved_content}
-                  </span>
-                  <span className="inline-flex items-center text-[11px] font-semibold text-emerald-400">
-                    <TrendingUp size={12} className="mr-0.5" /> +79%
                   </span>
                 </div>
               </div>
@@ -263,9 +319,6 @@ export default function DashboardPage() {
                   <span className="text-2xl font-bold text-white tracking-tight">
                     {overview.total_violations}
                   </span>
-                  <span className="inline-flex items-center text-[11px] font-semibold text-rose-400">
-                    <TrendingDown size={12} className="mr-0.5" /> -21%
-                  </span>
                 </div>
               </div>
             </div>
@@ -276,13 +329,10 @@ export default function DashboardPage() {
                 <Clock size={22} />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-400">Pending Reviews</p>
+                <p className="text-xs font-medium text-slate-400">Items needing review</p>
                 <div className="mt-1 flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-white tracking-tight">
-                    {overview.pending_reviews}
-                  </span>
-                  <span className="inline-flex items-center text-[11px] font-semibold text-amber-400">
-                    <TrendingUp size={12} className="mr-0.5" /> +8%
+                    {pendingReviewItems}
                   </span>
                 </div>
               </div>
@@ -294,66 +344,60 @@ export default function DashboardPage() {
             {/* Left Chart: Submission Trends */}
             <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-5 shadow-xl">
               <div className="flex items-center justify-between pb-3">
-                <h2 className="text-sm font-bold text-white tracking-wide">Submission Trends</h2>
+                <h2 className="text-sm font-bold text-white tracking-wide">Compliance Trend</h2>
                 <div className="flex items-center gap-4 text-xs">
                   <div className="flex items-center gap-1.5 text-slate-300">
                     <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 shadow-sm shadow-cyan-400/50" />
-                    <span>Total</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-slate-300">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50" />
-                    <span>Compliant</span>
+                    <span>Average score</span>
                   </div>
                 </div>
               </div>
 
               <div className="h-64 w-full mt-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trendData} margin={{ top: 15, right: 15, left: -20, bottom: 5 }}>
-                    <XAxis
-                      dataKey="label"
-                      stroke="#475569"
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      domain={[0, 100]}
-                      ticks={[0, 25, 50, 75, 100]}
-                      stroke="#475569"
-                      tick={{ fill: "#94a3b8", fontSize: 11 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#0c1322",
-                        borderColor: "#1e2c47",
-                        borderRadius: "12px",
-                        boxShadow: "0 10px 25px -5px rgba(0,0,0,0.5)",
-                        fontSize: "12px",
-                        color: "#f8fafc",
-                      }}
-                      itemStyle={{ color: "#e2e8f0" }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="total"
-                      stroke="#38bdf8"
-                      strokeWidth={2.8}
-                      dot={{ r: 4, fill: "#38bdf8", stroke: "#0c1322", strokeWidth: 2 }}
-                      activeDot={{ r: 6, fill: "#38bdf8" }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="compliant"
-                      stroke="#34d399"
-                      strokeWidth={2.8}
-                      dot={{ r: 4, fill: "#34d399", stroke: "#0c1322", strokeWidth: 2 }}
-                      activeDot={{ r: 6, fill: "#34d399" }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                {trendData.length ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={trendData} margin={{ top: 15, right: 15, left: -20, bottom: 5 }}>
+                      <XAxis
+                        dataKey="label"
+                        stroke="#475569"
+                        tick={{ fill: "#94a3b8", fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        domain={[0, 100]}
+                        ticks={[0, 25, 50, 75, 100]}
+                        stroke="#475569"
+                        tick={{ fill: "#94a3b8", fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#0c1322",
+                          borderColor: "#1e2c47",
+                          borderRadius: "12px",
+                          boxShadow: "0 10px 25px -5px rgba(0,0,0,0.5)",
+                          fontSize: "12px",
+                          color: "#f8fafc",
+                        }}
+                        itemStyle={{ color: "#e2e8f0" }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="average_score"
+                        stroke="#38bdf8"
+                        strokeWidth={2.8}
+                        dot={{ r: 4, fill: "#38bdf8", stroke: "#0c1322", strokeWidth: 2 }}
+                        activeDot={{ r: 6, fill: "#38bdf8" }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-xs text-slate-400">
+                    No compliance analysis data for this period.
+                  </div>
+                )}
               </div>
             </div>
 
@@ -421,6 +465,110 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {analytics && (
+            <div className="grid gap-6 xl:grid-cols-5">
+              <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-5 shadow-xl">
+                <h2 className="text-sm font-bold text-white tracking-wide">Recurring issues</h2>
+                <div className="mt-4 space-y-3">
+                    {analytics.recurring_violations?.length ? analytics.recurring_violations.slice(0, 4).map((issue) => (
+                    <div key={issue.category} className="flex items-center justify-between text-xs text-slate-300">
+                      <span className="capitalize">{issue.category.replaceAll("_", " ")}</span>
+                      <span className="rounded-full bg-navy-900 px-2 py-0.5 text-slate-100">{issue.count}</span>
+                    </div>
+                    )) : <p className="text-xs text-slate-400">No recurring issue patterns detected.</p>}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-5 shadow-xl">
+                <h2 className="text-sm font-bold text-white tracking-wide">Reviewer workload</h2>
+                <div className="mt-4 space-y-3">
+                  {analytics.reviewer_workload?.length ? analytics.reviewer_workload.slice(0, 4).map((reviewer) => (
+                    <div key={reviewer.reviewer_id} className="flex items-center justify-between text-xs text-slate-300">
+                      <span>{reviewer.reviewer_name}</span>
+                      <span>{reviewer.pending_assignments || 0} pending · {reviewer.decision_count} decisions</span>
+                    </div>
+                  )) : <p className="text-xs text-slate-400">No review activity recorded.</p>}
+                  <div className="border-t border-navy-700 pt-2 text-xs text-slate-400">
+                    Assignments: {analytics.review_assignment_statistics?.pending || 0} pending · {analytics.review_assignment_statistics?.completed || 0} completed · {analytics.review_assignment_statistics?.cancelled || 0} cancelled
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    Backlog: {analytics.review_backlog?.pending_content || 0} content · {analytics.review_backlog?.pending_claims || 0} claims · {analytics.review_backlog?.pending_visual_analyses || 0} visuals
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-5 shadow-xl">
+                <h2 className="text-sm font-bold text-white tracking-wide">Approval statistics</h2>
+                <div className="mt-4 space-y-3 text-xs text-slate-300">
+                  <div className="flex items-center justify-between">
+                    <span>Content approval rate</span>
+                    <span>{analytics.approval_statistics?.approval_rate || 0}%</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Content decisions</span>
+                    <span>
+                      {(analytics.approval_statistics?.approve || 0)
+                        + (analytics.approval_statistics?.reject || 0)
+                        + (analytics.approval_statistics?.request_revision || 0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Visual approval rate</span>
+                    <span>{analytics.visual_review_statistics?.approval_rate || 0}%</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Visual decisions</span>
+                    <span>
+                      {(analytics.visual_review_statistics?.approve || 0)
+                        + (analytics.visual_review_statistics?.reject || 0)
+                        + (analytics.visual_review_statistics?.request_revision || 0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Claim decisions</span>
+                    <span>{analytics.review_decision_statistics?.claim_decisions || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-navy-700 pt-2">
+                    <span>All completed decisions</span>
+                    <span>{analytics.review_decision_statistics?.total_completed_decisions || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Average review time</span>
+                    <span>{analytics.average_review_time_hours || 0} hours</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-5 shadow-xl">
+                <h2 className="text-sm font-bold text-white tracking-wide">Claim verification</h2>
+                <div className="mt-4 space-y-3 text-xs text-slate-300">
+                  <div className="flex items-center justify-between"><span>Supported</span><span>{analytics.claim_verification_trends?.reduce((sum, item) => sum + (item.supported || 0), 0) || 0}</span></div>
+                  <div className="flex items-center justify-between"><span>Contradicted</span><span>{analytics.claim_verification_trends?.reduce((sum, item) => sum + (item.contradicted || 0), 0) || 0}</span></div>
+                  <div className="flex items-center justify-between"><span>Insufficient evidence</span><span>{analytics.claim_verification_trends?.reduce((sum, item) => sum + (item.insufficient_evidence || 0), 0) || 0}</span></div>
+                  <div className="flex items-center justify-between"><span>Needs review</span><span>{analytics.claim_verification_trends?.reduce((sum, item) => sum + (item.needs_review || 0), 0) || 0}</span></div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-5 shadow-xl">
+                <h2 className="text-sm font-bold text-white tracking-wide">Visual compliance</h2>
+                <div className="mt-4 space-y-3 text-xs text-slate-300">
+                  <div className="flex items-center justify-between">
+                    <span>Analyzed assets</span>
+                    <span>{analytics.visual_compliance_trends?.reduce((sum, item) => sum + (item.analyzed_assets || 0), 0) || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Potential findings</span>
+                    <span>{analytics.visual_compliance_trends?.reduce((sum, item) => sum + (item.potential_findings || 0), 0) || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Needs verification</span>
+                    <span>{analytics.visual_compliance_trends?.reduce((sum, item) => sum + (item.needs_verification || 0), 0) || 0}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Bottom Section: Recent Activity matching Reference Image Screen 1 */}
           <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-5 shadow-xl">
             <div className="flex items-center justify-between pb-4 border-b border-navy-750">
@@ -459,17 +607,9 @@ export default function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <div className="rounded-xl border border-navy-750 bg-navy-900/60 p-3.5 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                      <CheckCircle2 size={16} />
-                    </div>
-                    <p className="text-xs font-medium text-slate-300">
-                      Content analysis completed - Marketing Campaign Q4
-                    </p>
-                  </div>
-                  <span className="text-[11px] text-slate-400 font-medium">2m ago</span>
-                </div>
+                <p className="py-3 text-center text-xs text-slate-400">
+                  No recent organisation activity.
+                </p>
               )}
             </div>
           </div>

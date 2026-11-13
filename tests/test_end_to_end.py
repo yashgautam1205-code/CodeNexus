@@ -152,6 +152,16 @@ def test_full_reviewable_analysis_workflow(client, tmp_path, monkeypatch):
     assert filtered.status_code == 200
     assert filtered.json()["total_submissions"] == 1
     assert filtered.json()["total_violations"] == 1
+    category_filtered = client.get(
+        "/api/dashboard/overview?category=prohibited_terminology",
+        headers=headers,
+    )
+    assert category_filtered.json()["total_violations"] == 1
+    empty_category = client.get(
+        "/api/dashboard/overview?category=brand_messaging",
+        headers=headers,
+    )
+    assert empty_category.json()["total_violations"] == 0
     empty_filter = client.get(
         "/api/dashboard/overview?review_status=rejected",
         headers=headers,
@@ -164,3 +174,12 @@ def test_full_reviewable_analysis_workflow(client, tmp_path, monkeypatch):
     )
     assert analytics.status_code == 200
     assert analytics.json()["issue_categories"]["prohibited_terminology"] == 1
+    reviewer_id = client.get("/api/auth/me", headers=headers).json()["id"]
+    reviewer_analytics = client.get(
+        f"/api/dashboard/analytics?reviewer_id={reviewer_id}",
+        headers=headers,
+    )
+    assert reviewer_analytics.status_code == 200
+    assert reviewer_analytics.json()["reviewer_workload"][0]["reviewer_id"] == reviewer_id
+    assert reviewer_analytics.json()["approval_statistics"]["approve"] == 1
+    assert reviewer_analytics.json()["average_review_time_hours"] >= 0

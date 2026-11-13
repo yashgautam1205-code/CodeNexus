@@ -5,12 +5,17 @@ from app.models.entities import (
     BrandAsset,
     BrandGuideline,
     BrandRule,
+    ClaimVerificationReviewHistory,
+    ClaimVerificationRecord,
     ContentSubmission,
     CorrectionSuggestion,
     Organization,
+    ReviewAssignment,
     User,
     UserRole,
     Violation,
+    VisualAnalysisRecord,
+    VisualReviewHistory,
 )
 
 __all__ = [
@@ -20,10 +25,15 @@ __all__ = [
     "BrandAsset",
     "BrandGuideline",
     "BrandRule",
+    "ClaimVerificationReviewHistory",
+    "ClaimVerificationRecord",
     "ContentSubmission",
     "CorrectionSuggestion",
     "Organization",
+    "ReviewAssignment",
     "User",
     "UserRole",
     "Violation",
+    "VisualAnalysisRecord",
+    "VisualReviewHistory",
 ]

@@ -10,13 +10,13 @@ Request validation errors use `422` with `detail` as an array of objects contain
 
 ## Base URL, authentication, and loading
 
-- The Axios client uses `VITE_API_BASE_URL` as `baseURL`, sends normal requests with configurable `VITE_API_TIMEOUT_MS` (default 15 seconds), sends Gemini-backed analysis/suggestion requests with configurable `VITE_AI_REQUEST_TIMEOUT_MS` (default 130 seconds), and attaches the saved access token as an HTTP bearer token. Both timeout settings are in milliseconds. Token storage key: `brandguard.accessToken`.
+- The Axios client uses `VITE_API_BASE_URL` as `baseURL`, sends normal requests with configurable `VITE_API_TIMEOUT_MS` (default 15 seconds), sends Gemini-backed analysis/suggestion requests with configurable `VITE_AI_REQUEST_TIMEOUT_MS` (default 240 seconds), and attaches the saved access token as an HTTP bearer token. Both timeout settings are in milliseconds. Token storage key: `brandguard.accessToken`.
 - Local development relies on Vite's `/api` proxy to `http://localhost:8000`; override its target with `VITE_API_PROXY_TARGET`.
 - Production must set `VITE_API_BASE_URL` to the backend HTTPS origin, with no path or `/api` suffix. Production builds fail with a configuration error if it is missing or points to a non-HTTPS/local URL. If this check were absent, requests could go to the Vercel frontend origin, where the catch-all rewrite serves `index.html`, not the API.
 - Protected routes require `Authorization: Bearer <access_token>`. Tokens are returned by register/login and expire after the configured lifetime (60 minutes by default). Invalid, expired, missing, or inactive-user tokens return `401`.
 - Public routes: `GET /`, `GET /api/health`, `GET /api/health/database`, `POST /api/auth/register`, and `POST /api/auth/login`. All other routes require authentication.
-- Auth restoration calls `GET /api/auth/me`; the app shows its startup loading state until this finishes. Data pages show route-specific loading indicators. Mutations generally disable the associated button and show action-specific progress text; request errors are shown inline. Dashboard filter reloads, review-history loads, and several action handlers do not consistently show a dedicated loading indicator.
-- The default AI request timeout (130 seconds) exceeds the backend Gemini timeout maximum (120 seconds). A caller may configure it lower; if it expires, the UI warns that server-side processing may still complete and recommends checking history before retrying.
+- Auth restoration calls `GET /api/auth/me`; the app shows its startup loading state until this finishes. Data pages show route-specific loading indicators. Mutations generally disable the associated button and show action-specific progress text; request errors are shown inline. Dashboard filter reloads use a loading state.
+- The default AI request timeout is 240 seconds to allow bounded Gemini retry/fallback processing. A caller may configure it lower; if it expires, the UI warns that server-side processing may still complete and recommends checking history before retrying. Each Gemini HTTP attempt is independently bounded by `GEMINI_TIMEOUT_MS`.
 
 ## Roles and permissions
 
@@ -29,6 +29,7 @@ Role values: `admin`, `brand_manager`, `content_creator`, `reviewer`.
 | Upload/manage guidelines and rules, approve rules, rebuild retrieval index | `admin`, `brand_manager` |
 | Upload/read content, run/read analysis, create/decide correction suggestions, view dashboard | Any authenticated role |
 | Approve/reject/request revision on content | `admin`, `brand_manager`, `reviewer` |
+| Review claim-verification results and visual analyses | `admin`, `brand_manager`, `reviewer` |
 | Read review history | Any authenticated role |
 
 Organisation-scoped records are filtered using the authenticated user's organisation. A role failure returns `403`; a record outside the user's organisation is normally indistinguishable from a missing record and returns `404`.
@@ -53,7 +54,7 @@ Rule categories: `tone_of_voice`, `approved_terminology`, `prohibited_terminolog
 
 `ContentRead`: `id`, `filename`, `extracted_text`, `status`, `review_status`, `created_at`. Review statuses are `pending`, `approved`, `rejected`, `revision_requested`.
 
-`AnalysisRead`: `id`, `submission_id`, `compliance_score`, `analysis_status`, `analysis_note` (nullable), `score_formula`, `created_at`, `findings` (array).
+`AnalysisRead`: `id`, `submission_id`, `compliance_score`, `analysis_status`, `analysis_note` (nullable), `score_formula`, `created_at`, `findings` (array), `claim_verifications` (array), and `visual_analyses` (array). Each persisted claim result includes `claim_type`, `time_sensitive`, canonical machine `status` (`supported|contradicted|insufficient_evidence|needs_review`), confidence, retrieval/assessment status, assessment model, source-backed assessment rationale and selected source ids, sanitized assessment error type/status code, last verification time, cited evidence metadata, and separate `review_status`/`review_history`. Assessment rationale is stored only when at least one selected source id matches a retrieved, sufficiently relevant citation. Human decisions never overwrite the machine status. Linked visual reports include their findings, evidence, confidence, provider status/model, review status, and review history. Older persisted claim statuses are normalized by the current migration; legacy analysis-finding `evidence_status` still uses its own `no_source_found|needs_verification` vocabulary.
 
 Each finding has: `id`, `category`, `affected_text`, `explanation`, `severity` (`critical|high|medium|low`), `confidence` (0–1), `evidence_status` (`supported|contradicted|no_source_found|needs_verification`), `evidence_text` (nullable), `guideline_id` (nullable), `guideline_title` (nullable), `source_section` (nullable), `source_page` (nullable), `suggested_correction` (nullable). Analysis may return HTTP 200 with `analysis_status: "partial"` and an explanatory `analysis_note` when AI or retrieval is unavailable; this is not a successful Gemini result.
 
@@ -62,6 +63,14 @@ Each finding has: `id`, `category`, `affected_text`, `explanation`, `severity` (
 `SuggestionRead`: `id`, `violation_id`, `original_text`, `suggested_text`, `decision` (`pending|accepted|rejected|edited`), `generation_source` (`gemini|deterministic|fallback`, nullable), `created_at`.
 
 `ReviewRead`: `id`, `submission_id`, `reviewer_id`, `decision` (`approve|reject|request_revision`), `previous_status`, `new_status`, `comment` (nullable), `created_at`.
+
+### Visual and external evidence
+
+Visual analysis is persisted under the asset's organisation and includes per-finding evidence, confidence, provider status, palette status, and review status. Approved HEX palette rules and explicitly approved logo-reference assets are used as comparison evidence. High-variation images skip automated palette violations and set `palette_status` to `needs_verification`, with a warning for human review. Uncertain detections use `needs_verification`; no provider result is returned as a confirmed violation. Only admin/brand_manager users can approve visual reference assets. Admin, brand_manager, and reviewer roles can record visual review decisions; reject/revision decisions require a comment and each decision is retained in visual review history and audit logs.
+
+Claim verification combines supplied evidence and approved organisation rules with optional configured external search results. Claim types are `objective_factual`, `statistical`, `product_performance`, `superiority`, and `subjective_marketing`. External citations are restricted to HTTPS URLs returned by the configured search provider; source ID selections not present in the retrieved result set are ignored. Publication/retrieval timestamps, publisher domain, and freshness state are retained when available. Credibility is a heuristic score, relevance is lexical overlap, and time-sensitive claims reject stale/unknown-dated sources for automated classification. `citation_valid` means the HTTPS URL matched a configured-provider result; it does not establish that the page is accessible or independently validate the claim. Provider failure remains unverified. Reviewer status and comments are stored separately.
+
+`ReviewAssignmentRead`: assignment id, resource type (`content|visual|claim`), resource id/name, reviewer and assigner ids, reviewer name, status (`pending|completed|cancelled`), and assignment/completion timestamps. Reviewers see only their own assignments. When an item has a pending assignment, a reviewer assigned to a different person cannot decide it. Admins and brand managers may assign pending items; completing a review closes pending assignments for that resource.
 
 ### Dashboard
 
@@ -113,6 +122,9 @@ All routes below are available on the backend. `204` responses have no response 
 | `GET /api/analysis` | Optional `limit` (default 50, 1–100), `offset` (default 0, >=0) | `AnalysisRead[]` | Authenticated |
 | `GET /api/analysis/{analysis_id}` | None | `AnalysisRead` | Authenticated; `404` |
 | `GET /api/analysis/{analysis_id}/report` | None | `AnalysisRead` | Authenticated; `404`; same schema as analysis detail |
+| `POST /api/evidence/extract-claims` | JSON `{text}` | `{claims: [...]}` | Public extraction; no provider call |
+| `POST /api/evidence/verify` | JSON `{text, evidence?: [...], submission_id?}` | `ClaimResult[]` with evidence/provider metadata | Authenticated; `submission_id`, if supplied, must belong to caller's organisation |
+
 | `POST /api/findings/{finding_id}/suggest` | No body | `201 SuggestionRead` | Authenticated; `404`; source is explicit in `generation_source` |
 | `POST /api/suggestions/{suggestion_id}/decision` | JSON `{decision: "accepted"|"rejected"|"edited", suggested_text?}`; edited requires non-empty text, max 8000 chars | `SuggestionRead` | Authenticated; `404`, `422` |
 
@@ -126,19 +138,33 @@ All routes below are available on the backend. `204` responses have no response 
 | `POST /api/reviews/{content_id}/reject` | `ReviewDecision` with non-empty comment | `ReviewRead` | Admin/brand manager/reviewer; `404`, `422` |
 | `POST /api/reviews/{content_id}/request-revision` | `ReviewDecision` with non-empty comment | `ReviewRead` | Admin/brand manager/reviewer; `404`, `422` |
 | `GET /api/reviews/{content_id}/history` | None | `ReviewRead[]`, newest first | Authenticated; `404` submission |
+| `POST /api/evidence/{claim_verification_id}/review` | JSON `{decision: "approve"|"reject"|"request_additional_evidence", comment?}` | Updated `ClaimResult`, with unchanged AI status and appended review history | Admin/brand manager/reviewer; reject/additional-evidence decisions require a comment; `404`, `422` |
+| `GET /api/review-assignments?status=pending` | Optional status (`pending|completed|cancelled`) and limit (1–500) | `ReviewAssignmentRead[]` | Admin/brand manager see organisation assignments; reviewer sees only own assignments |
+| `GET /api/review-assignments/reviewers` | None | Active reviewer/admin/brand-manager identities | Admin/brand manager; organisation-scoped |
+| `POST /api/review-assignments` | JSON `{resource_type: "content"|"visual"|"claim", resource_id, reviewer_id}` | `201 ReviewAssignmentRead` | Admin/brand manager; pending organisation-owned item only; previous pending assignment is cancelled; `404`, `409` |
+
+### Visual assets
+
+| Method and path | Request | Response | Access and relevant errors |
+|---|---|---|---|
+| `POST /api/brand-assets/upload` | Multipart `file`, optional `asset_kind` (`creative|logo_reference`, default `creative`) | `201 BrandAssetRead` (`approved: false`) | Authenticated; supported raster image, size/type validation |
+| `PUT /api/brand-assets/{asset_id}/approve` | No body | `BrandAssetRead` | Admin/brand manager; org-scoped; `404` |
+| `POST /api/brand-assets/{asset_id}/analyze` | Optional `submission_id` and `logo_required` query parameters | `VisualComplianceReport` | Authenticated; org-scoped; analysis/evidence is persisted and audited; when linked, appears in the unified analysis report |
+| `GET /api/brand-assets/{asset_id}/analysis/latest` | None | Latest visual report, review state/history | Authenticated; org-scoped; `404` |
+| `POST /api/brand-assets/{asset_id}/analysis/{analysis_id}/review` | JSON `{decision: "approve"|"reject"|"request_revision", comment?}` | Updated visual report and review history | Admin/brand manager/reviewer; reject/revision require comment |
 
 ### Dashboard
 
-Both dashboard routes accept `days` (default 30, 1–365), optional `review_status` (`pending|approved|rejected|revision_requested`), and optional `severity` (`critical|high|medium|low`). Invalid filters return `422`. `severity` filters findings; submission totals/status counts still reflect the selected date range/status, not severity.
+Both dashboard routes accept `days` (default 30, 1–365), `granularity` (`daily|weekly|monthly`), optional `review_status` (`pending|approved|rejected|revision_requested`), `severity` (`critical|high|medium|low`), `category` (up to 48 characters), and `reviewer_id`. Invalid filters return `422`. `severity` and `category` are violation-specific; shared date/status/reviewer filters scope content, claim, visual, and reviewer analytics. Reviewer filtering includes review history and pending assignments. `review_assignment_statistics` and reviewer workload include pending/completed/cancelled assignment counts.
 
 | Method and path | Response | Access |
 |---|---|---|
-| `GET /api/dashboard/overview` | `DashboardOverview` | Authenticated |
-| `GET /api/dashboard/analytics` | `{issue_categories: {category: count}, severity_distribution: {severity: count}, compliance_trend: [{date, average_score}]}` | Authenticated |
+| `GET /api/dashboard/overview?days=30&review_status=approved&severity=high&category=unsupported_claim&reviewer_id={id}` | `DashboardOverview` | Authenticated |
+| `GET /api/dashboard/analytics?days=30&granularity=weekly&review_status=approved&severity=high&category=unsupported_claim&reviewer_id={id}` | Includes issue/severity/compliance data, claim and visual trends, review workload/time, assignment statistics, and persisted decision breakdowns | Authenticated |
 
 ## Frontend integration findings and readiness
 
-The existing frontend calls match the corresponding backend paths, methods, and payloads for login/register, user management, content uploads/listing, analysis/report retrieval, correction decisions, guideline/rule management, index reindexing, reviews/history, and dashboard overview. The frontend also supplies `supersedes_guideline_id` when linking guideline versions. It does not currently call `GET /api/dashboard/analytics`, `GET /api/content/{id}`, `GET /api/guidelines/{id}`, `GET /api/rules/{id}`, or `GET /api/analysis/{id}/report`; these are available for future integration.
+The content page hosts visual asset upload/approval/analysis/review and the review queue provides content assignment controls. The analysis report displays persisted claim assessments and separate human decisions; the assignment API also supports visual and claim records, but the browser does not yet expose their assignment controls. The dashboard exposes date/granularity, review-status, severity, category, and reviewer filters over persisted data. The frontend also supplies `supersedes_guideline_id` when linking guideline versions. It does not currently call `GET /api/content/{id}`, `GET /api/guidelines/{id}`, `GET /api/rules/{id}`, or `GET /api/analysis/{id}/report`; these remain available for future integration.
 
 Before frontend refinement or deployment:
 
@@ -149,3 +175,7 @@ Before frontend refinement or deployment:
 5. **Use safe multipart handling.** Upload fields are named `file`; guideline version linking uses the additional form field `supersedes_guideline_id`.
 
 Backend contract readiness: all routes listed above are implemented and have typed request/response behavior as documented. This is a source-level contract review, not a live PostgreSQL, Gemini, Render, or Vercel integration test. Live service/deployment verification remains outstanding.
+
+## Production storage and deployment
+
+The production backend requires `PERSISTENT_STORAGE_ROOT`, `UPLOAD_DIRECTORY`, and `CHROMA_PERSIST_DIRECTORY` to be explicit absolute paths. Upload and vector paths must be non-temporary and inside the configured root. Startup verifies that the root is an attached, writable filesystem mount; the application does not currently support object storage. The Render production blueprint mounts its disk at `/var/data/brandguard` and places uploads and Chroma data below it. The separate `render.demo.yaml` blueprint is ephemeral and rejects uploads. See the README Deployment section for PostgreSQL, ClamAV, secrets, Docker, and migration setup.

@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import logging
+import os
 from time import perf_counter
 
 from fastapi import FastAPI, Request
@@ -7,23 +8,43 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.diagnostics import log_exception_trace
 from app.api.auth import router as auth_router
+from app.api.brand_assets import router as brand_assets_router
 from app.api.content import router as content_router
 from app.api.analysis import router as analysis_router
 from app.api.corrections import router as corrections_router
 from app.api.dashboard import router as dashboard_router
+from app.api.evidence import router as evidence_router
 from app.api.guidelines import router as guidelines_router
 from app.api.health import router as health_router
 from app.api.reviews import router as reviews_router
+from app.api.review_assignments import router as review_assignments_router
 from app.core.config import settings
-from app.database.session import Base, engine
 
 logger = logging.getLogger(__name__)
 
 
+def ensure_production_storage() -> None:
+    storage_root = settings.persistent_storage_root_path
+    if not storage_root.is_mount():
+        raise RuntimeError(
+            "PERSISTENT_STORAGE_ROOT is not an attached filesystem mount; refusing to start with ephemeral storage."
+        )
+    for label, path in (
+        ("UPLOAD_DIRECTORY", settings.upload_path),
+        ("CHROMA_PERSIST_DIRECTORY", settings.chroma_path),
+    ):
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise RuntimeError(f"{label} is unavailable on persistent storage.") from exc
+        if not os.access(path, os.W_OK | os.X_OK):
+            raise RuntimeError(f"{label} is not writable on persistent storage.")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    if settings.environment == "development":
-        Base.metadata.create_all(bind=engine)
+    if settings.environment == "production":
+        ensure_production_storage()
     yield
 
 app = FastAPI(
@@ -75,7 +96,10 @@ app.include_router(analysis_router)
 app.include_router(corrections_router)
 app.include_router(guidelines_router)
 app.include_router(reviews_router)
+app.include_router(review_assignments_router)
 app.include_router(dashboard_router)
+app.include_router(brand_assets_router)
+app.include_router(evidence_router)
 
 
 @app.get("/", tags=["root"])

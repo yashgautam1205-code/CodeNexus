@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button, Card, EmptyState, ErrorNotice, Loading, SuccessNotice } from "../components/Feedback";
+import { useAuth } from "../context/AuthContext";
 import { AI_REQUEST_TIMEOUT_MS, api, getErrorMessage } from "../services/api";
 
 const severityColors = {
@@ -33,6 +34,7 @@ const severityColors = {
 export default function AnalysisPage() {
   const { analysisId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [report, setReport] = useState(null);
   const [allAnalyses, setAllAnalyses] = useState([]);
   const [selectedFindingId, setSelectedFindingId] = useState(null);
@@ -43,6 +45,8 @@ export default function AnalysisPage() {
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [claimReviewComments, setClaimReviewComments] = useState({});
+  const [claimReviewBusy, setClaimReviewBusy] = useState("");
   const actionInProgress = useRef(new Set());
 
   // Load all analyses if needed or specific analysis
@@ -152,6 +156,38 @@ export default function AnalysisPage() {
     }
   }
 
+  async function reviewClaim(claim, decision) {
+    const comment = claimReviewComments[claim.id]?.trim() || "";
+    if (decision !== "approve" && !comment) {
+      setError("A comment is required to reject a claim or request additional evidence.");
+      return;
+    }
+    if (actionInProgress.current.has(claim.id)) return;
+    actionInProgress.current.add(claim.id);
+    setClaimReviewBusy(claim.id);
+    setError("");
+    setSuccess("");
+    try {
+      const { data } = await api.post(`/api/evidence/${claim.id}/review`, {
+        decision,
+        comment: comment || undefined,
+      });
+      setReport((current) => ({
+        ...current,
+        claim_verifications: current.claim_verifications.map((item) =>
+          item.id === claim.id ? data : item
+        ),
+      }));
+      setClaimReviewComments((current) => ({ ...current, [claim.id]: "" }));
+      setSuccess(`Claim review saved as ${data.review_status.replaceAll("_", " ")}.`);
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, "Claim review decision could not be saved."));
+    } finally {
+      actionInProgress.current.delete(claim.id);
+      setClaimReviewBusy("");
+    }
+  }
+
   async function downloadGuideline(finding) {
     if (!finding.guideline_id) return;
     setError("");
@@ -197,6 +233,41 @@ export default function AnalysisPage() {
       }
       lines.push(``);
     });
+    if (report.claim_verifications?.length) {
+      lines.push(`## Claim Verification`);
+      lines.push(``);
+      report.claim_verifications.forEach((claim) => {
+        lines.push(`- **${claim.status.replaceAll("_", " ")}** (${Math.round(claim.confidence * 100)}%): ${claim.claim_text}`);
+        lines.push(`  - ${claim.reason}`);
+        if (claim.assessment_rationale && claim.assessment_source_ids?.length) {
+          lines.push(`  - Gemini rationale (${claim.assessment_model || "configured model"}): ${claim.assessment_rationale}`);
+        }
+        claim.evidence?.forEach((source) => {
+          if (source.source_url) {
+            const relation = claim.assessment_source_ids?.includes(source.id)
+              ? source.evidence_relation || "cited"
+              : "retrieved";
+            lines.push(`  - ${relation} source: ${source.title || source.source_url} — ${source.source_url}`);
+          }
+        });
+      });
+      lines.push(``);
+    }
+    if (report.visual_analyses?.length) {
+      lines.push(`## Visual Brand Compliance`);
+      lines.push(``);
+      report.visual_analyses.forEach((visual) => {
+        lines.push(`### ${visual.filename} — ${visual.review_status.replaceAll("_", " ")}`);
+        lines.push(visual.summary);
+        visual.findings?.forEach((finding) => {
+          lines.push(`- **${finding.category.replaceAll("_", " ")}** (${finding.verification_status}, ${Math.round(finding.confidence * 100)}%): ${finding.description}`);
+          finding.evidence?.forEach((evidence) => {
+            lines.push(`  - Evidence: ${evidence.observation || evidence.method}`);
+          });
+        });
+        lines.push(``);
+      });
+    }
 
     const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -471,6 +542,7 @@ export default function AnalysisPage() {
                             </span>
                           )}
                         </div>
+
                       </div>
 
                       <p className="mt-2.5 text-xs text-slate-300 leading-relaxed">
@@ -538,51 +610,274 @@ export default function AnalysisPage() {
               )}
             </div>
           </div>
+
+          {report.claim_verifications?.length > 0 && (
+            <section className="rounded-2xl border border-navy-700/60 bg-navy-850 p-5 shadow-xl">
+              <div className="flex items-center justify-between border-b border-navy-750 pb-4">
+                <div>
+                  <h2 className="text-sm font-bold text-white">Evidence-based Claim Verification</h2>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Approved internal rules remain in force; external sources are supplementary.
+                  </p>
+                </div>
+                <span className="text-[10px] text-slate-500">
+                  {report.claim_verifications.length} claims
+                </span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {report.claim_verifications.map((claim) => (
+                  <article key={claim.id} className="rounded-xl border border-navy-750 bg-navy-900/70 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-xs font-semibold text-slate-100">{claim.claim_text}</h3>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                        claim.status === "supported"
+                          ? "bg-emerald-500/15 text-emerald-300"
+                          : claim.status === "contradicted"
+                          ? "bg-rose-500/15 text-rose-300"
+                          : "bg-amber-500/15 text-amber-300"
+                      }`}>
+                        {claim.status.replaceAll("_", " ")} · {Math.round(claim.confidence * 100)}%
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{claim.reason}</p>
+                    <p className="mt-2 text-[10px] text-slate-500">
+                      Claim type: {claim.claim_type?.replaceAll("_", " ") || "objective factual"}
+                      {claim.time_sensitive ? " · time-sensitive evidence required" : ""}
+                    </p>
+                    <p className="mt-2 text-[10px] text-cyan-200">
+                      Human decision: {claim.review_status?.replaceAll("_", " ") || "pending"}
+                    </p>
+                    <p className="mt-2 text-[10px] text-slate-500">
+                      Retrieval: {claim.provider_status.replaceAll("_", " ")}
+                      {" · assessment: "}{claim.assessment_status?.replaceAll("_", " ") || "not attempted"}
+                      {claim.assessment_model ? ` · Gemini ${claim.assessment_model}` : ""}
+                      {claim.retrieval_timestamp ? ` · ${new Date(claim.retrieval_timestamp).toLocaleString()}` : ""}
+                      {claim.last_verified_at ? ` · last checked ${new Date(claim.last_verified_at).toLocaleString()}` : ""}
+                    </p>
+                    {claim.assessment_error_type && (
+                      <p className="mt-2 text-[10px] text-amber-300">
+                        Gemini assessment unavailable: {claim.assessment_error_type}
+                        {claim.assessment_error_code ? ` (HTTP ${claim.assessment_error_code})` : ""}
+                      </p>
+                    )}
+                    {claim.assessment_rationale && claim.assessment_source_ids?.length > 0 && (
+                      <div className="mt-3 rounded-lg border border-blue-500/20 bg-blue-950/20 p-3">
+                        <p className="text-[10px] font-semibold text-blue-200">
+                          Gemini rationale · cited retrieved sources
+                        </p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+                          {claim.assessment_rationale}
+                        </p>
+                      </div>
+                    )}
+                    {claim.evidence?.length > 0 && (
+                      <ul className="mt-3 space-y-2 border-t border-navy-800 pt-3">
+                        {claim.evidence.map((source, index) => (
+                          <li key={`${claim.id}-${source.id || index}`} className="text-[10px] text-slate-400">
+                            <span className="font-semibold text-slate-200">
+                              {claim.assessment_source_ids?.includes(source.id)
+                                ? `${source.evidence_relation || "cited"} Gemini citation`
+                                : source.evidence_relation || source.source_type || "evidence"}:
+                            </span>{" "}
+                            {source.source_url?.toLowerCase().startsWith("https://") ? (
+                              <a
+                                href={source.source_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-blue-300 underline underline-offset-2"
+                              >
+                                {source.title || source.source_url}
+                              </a>
+                            ) : (source.title || "Approved organisation rule")}
+                            {source.published_at ? ` · published ${source.published_at}` : ""}
+                            {source.publication_date_status ? ` · publication date ${source.publication_date_status}` : ""}
+                            {source.publisher_domain ? ` · ${source.publisher_domain}` : ""}
+                            {source.retrieved_at ? ` · retrieved ${new Date(source.retrieved_at).toLocaleString()}` : ""}
+                            {source.credibility_score != null ? ` · heuristic source score ${Math.round(source.credibility_score * 100)}%` : ""}
+                            {source.relevance_score != null ? ` · keyword overlap ${Math.round(source.relevance_score * 100)}%` : ""}
+                            {source.freshness_days != null ? ` · reported publication age ${source.freshness_days} days` : ""}
+                            {source.freshness_status ? ` · freshness ${source.freshness_status.replaceAll("_", " ")}` : ""}
+                            {source.citation_valid === true ? " · URL matched to retrieved result" : source.citation_valid === false ? " · URL did not match a retrieved result" : ""}
+                            {source.text && <p className="mt-1 text-slate-500">{source.text.length > 500 ? `${source.text.slice(0, 500)}…` : source.text}</p>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {["admin", "brand_manager", "reviewer"].includes(user?.role) && (
+                      <div className="mt-3 border-t border-navy-800 pt-3">
+                        <label className="mb-2 block text-[10px] font-semibold text-slate-400" htmlFor={`claim-review-${claim.id}`}>
+                          Reviewer comment (required for reject or additional evidence)
+                        </label>
+                        <input
+                          id={`claim-review-${claim.id}`}
+                          value={claimReviewComments[claim.id] || ""}
+                          onChange={(event) => setClaimReviewComments((current) => ({
+                            ...current,
+                            [claim.id]: event.target.value,
+                          }))}
+                          maxLength={2000}
+                          className="form-input text-xs"
+                          placeholder="Explain the decision or evidence needed"
+                        />
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {[
+                            ["approve", "Approve result"],
+                            ["reject", "Reject result"],
+                            ["request_additional_evidence", "Request evidence"],
+                          ].map(([decision, label]) => (
+                            <button
+                              key={decision}
+                              type="button"
+                              onClick={() => reviewClaim(claim, decision)}
+                              disabled={claimReviewBusy === claim.id}
+                              className="rounded-lg border border-navy-700 bg-navy-800 px-3 py-1.5 text-[10px] font-semibold text-slate-200 hover:bg-navy-750 disabled:opacity-50"
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        {claim.review_history?.map((entry, index) => (
+                          <p key={`${entry.created_at}-${index}`} className="mt-2 text-[10px] text-slate-500">
+                            {entry.reviewer_name} · {entry.decision.replaceAll("_", " ")} · {new Date(entry.created_at).toLocaleString()}
+                            {entry.comment ? ` · ${entry.comment}` : ""}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {report.visual_analyses?.length > 0 && (
+            <section className="rounded-2xl border border-cyan-500/25 bg-navy-850 p-5 shadow-xl">
+              <div className="border-b border-navy-750 pb-4">
+                <h2 className="text-sm font-bold text-white">Visual Brand Compliance</h2>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Visual observations are separate from the text compliance score and require human review.
+                </p>
+              </div>
+              <div className="mt-4 space-y-4">
+                {report.visual_analyses.map((visual) => (
+                  <article key={visual.analysis_id} className="rounded-xl border border-navy-750 bg-navy-900/70 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-xs font-semibold text-white">{visual.filename}</h3>
+                      <span className="text-[10px] text-cyan-200">
+                        {visual.review_status?.replaceAll("_", " ") || "pending"} · OCR: {visual.provider_status?.ocr || "unavailable"} · Vision: {visual.provider_status?.vision || "unavailable"}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[11px] text-slate-300">{visual.summary}</p>
+                    <div className="mt-3 space-y-2">
+                      {visual.findings?.length ? visual.findings.map((finding) => (
+                        <div key={finding.id} className="rounded-lg border border-navy-700 bg-navy-950/60 p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[11px] font-semibold text-white">{finding.category.replaceAll("_", " ")}</span>
+                            <span className="text-[10px] text-amber-300">
+                              {finding.verification_status.replaceAll("_", " ")} · {Math.round(finding.confidence * 100)}%
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] text-slate-300">{finding.description}</p>
+                          {finding.evidence?.map((evidence, index) => (
+                            <p key={`${finding.id}-evidence-${index}`} className="mt-1 text-[10px] text-slate-500">
+                              Evidence: {evidence.observation || evidence.method}
+                            </p>
+                          ))}
+                        </div>
+                      )) : <p className="text-[11px] text-emerald-300">No visual findings crossed the review thresholds.</p>}
+                    </div>
+                    {visual.review_history?.length > 0 && (
+                      <div className="mt-3 border-t border-navy-800 pt-3">
+                        {visual.review_history.map((entry, index) => (
+                          <p key={`${entry.created_at}-${index}`} className="mt-1 text-[10px] text-slate-500">
+                            {entry.decision.replaceAll("_", " ")} · {new Date(entry.created_at).toLocaleString()}
+                            {entry.comment ? ` · ${entry.comment}` : ""}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
 
         {/* Right: Guideline Evidence Card matching Reference Image Screen 4 */}
         <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-6 shadow-xl flex flex-col justify-between">
           <div>
             <h2 className="text-sm font-bold text-white tracking-wide pb-4 border-b border-navy-750">
-              Guideline Evidence
+              Finding Evidence
             </h2>
 
             {activeFinding ? (
               <div className="mt-5 space-y-4">
-                {/* Blue document card */}
-                <div className="rounded-xl border border-blue-500/30 bg-blue-950/25 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600/30 text-blue-400 border border-blue-500/40">
-                      <FileText size={20} />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="truncate font-bold text-white text-xs">
-                        {activeFinding.guideline_title || "Brand Guidelines v2.1"}
-                      </h3>
-                      <p className="text-[11px] text-blue-300 mt-0.5">
-                        {activeFinding.source_section || "Section 3.2 - Claims"}
-                        {activeFinding.source_page ? ` · Page ${activeFinding.source_page}` : " · Page 2"}
-                      </p>
+                {activeFinding.guideline_id ? (
+                  <div className="rounded-xl border border-blue-500/30 bg-blue-950/25 p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600/30 text-blue-400 border border-blue-500/40">
+                        <FileText size={20} />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="truncate font-bold text-white text-xs">
+                          {activeFinding.guideline_title || "Linked guideline"}
+                        </h3>
+                        {(activeFinding.source_section || activeFinding.source_page) && (
+                          <p className="text-[11px] text-blue-300 mt-0.5">
+                            {activeFinding.source_section || ""}
+                            {activeFinding.source_section && activeFinding.source_page ? " · " : ""}
+                            {activeFinding.source_page ? `Page ${activeFinding.source_page}` : ""}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-
-                {/* Evidence Quote Box */}
-                <div className="rounded-xl border border-navy-750 bg-navy-900/80 p-4">
-                  <p className="text-xs italic text-slate-300 leading-relaxed">
-                    "{activeFinding.evidence_text || 'Avoid making unsubstantiated superlative claims. All claims referencing industry performance must be backed by verifiable data.'}"
+                ) : (
+                  <p className="rounded-xl border border-amber-500/25 bg-amber-950/15 p-4 text-[11px] text-amber-200">
+                    No linked guideline citation is available for this finding.
                   </p>
-                </div>
+                )}
+
+                {activeFinding.evidence_text ? (
+                  <div className="rounded-xl border border-navy-750 bg-navy-900/80 p-4">
+                    <p className="mb-1 text-[10px] font-semibold text-slate-400">Evidence text</p>
+                    <p className="text-xs italic text-slate-300 leading-relaxed">
+                      "{activeFinding.evidence_text}"
+                    </p>
+                  </div>
+                ) : (
+                  <p className="rounded-xl border border-navy-750 bg-navy-900/80 p-4 text-[11px] text-slate-400">
+                    No evidence excerpt was saved for this finding.
+                  </p>
+                )}
 
                 <div className="space-y-2 pt-2 text-[11px] text-slate-400">
                   <div className="flex justify-between py-1 border-b border-navy-800">
                     <span>Evidence Status</span>
-                    <span className="font-semibold text-emerald-400 capitalize">{activeFinding.evidence_status}</span>
+                    <span
+                      className={`font-semibold capitalize ${
+                        activeFinding.evidence_status === "supported"
+                          ? "text-emerald-400"
+                          : activeFinding.evidence_status === "contradicted"
+                            ? "text-rose-400"
+                            : "text-amber-300"
+                      }`}
+                    >
+                      {activeFinding.evidence_status.replaceAll("_", " ")}
+                    </span>
                   </div>
-                  <div className="flex justify-between py-1 border-b border-navy-800">
-                    <span>Source Section</span>
-                    <span className="text-slate-300">{activeFinding.source_section || "Approved Standard"}</span>
-                  </div>
+                  {activeFinding.source_section && (
+                    <div className="flex justify-between py-1 border-b border-navy-800">
+                      <span>Source Section</span>
+                      <span className="text-slate-300">{activeFinding.source_section}</span>
+                    </div>
+                  )}
+                  {activeFinding.source_page && (
+                    <div className="flex justify-between py-1 border-b border-navy-800">
+                      <span>Source Page</span>
+                      <span className="text-slate-300">{activeFinding.source_page}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (

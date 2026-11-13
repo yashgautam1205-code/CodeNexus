@@ -31,6 +31,9 @@ export default function ReviewsPage() {
   const [analyses, setAnalyses] = useState([]);
   const [comments, setComments] = useState({});
   const [history, setHistory] = useState({});
+  const [assignments, setAssignments] = useState([]);
+  const [reviewers, setReviewers] = useState([]);
+  const [assignmentSelections, setAssignmentSelections] = useState({});
   const [expandedId, setExpandedId] = useState(null);
   const [reviewingSubmission, setReviewingSubmission] = useState(null); // Active submission in review modal
   const [severityFilter, setSeverityFilter] = useState("all");
@@ -40,16 +43,23 @@ export default function ReviewsPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const canReview = reviewableRoles.includes(user?.role);
+  const canAssign = ["admin", "brand_manager"].includes(user?.role);
 
   async function load() {
     setLoading(true);
     try {
-      const [submissionResponse, analysisResponse] = await Promise.all([
+      const requests = [
         api.get("/api/content"),
         api.get("/api/analysis"),
-      ]);
+        api.get("/api/review-assignments"),
+      ];
+      if (canAssign) requests.push(api.get("/api/review-assignments/reviewers"));
+      const responses = await Promise.all(requests);
+      const [submissionResponse, analysisResponse, assignmentResponse] = responses;
       setSubmissions(submissionResponse.data);
       setAnalyses(analysisResponse.data);
+      setAssignments(assignmentResponse.data);
+      if (canAssign) setReviewers(responses[3].data);
       setError("");
     } catch (requestError) {
       setError(getErrorMessage(requestError, "Review queue could not be loaded."));
@@ -60,7 +70,7 @@ export default function ReviewsPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [canAssign]);
 
   const latestAnalysis = useMemo(() => {
     const map = new Map();
@@ -114,6 +124,14 @@ export default function ReviewsPage() {
   // Filter and sort
   const filteredSubmissions = useMemo(() => {
     let result = [...submissions];
+    const assignedIds = new Set(
+      assignments
+        .filter((assignment) => assignment.resource_type === "content" && assignment.status === "pending")
+        .map((assignment) => assignment.resource_id),
+    );
+    if (user?.role === "reviewer" && assignedIds.size > 0) {
+      result = result.filter((submission) => assignedIds.has(submission.id));
+    }
 
     if (severityFilter !== "all") {
       result = result.filter((s) => getSubmissionSeverity(s.id) === severityFilter);
@@ -126,7 +144,28 @@ export default function ReviewsPage() {
     });
 
     return result;
-  }, [submissions, severityFilter, sortOrder, latestAnalysis]);
+  }, [submissions, assignments, severityFilter, sortOrder, latestAnalysis, user?.role]);
+
+  async function assignSubmission(submissionId) {
+    const reviewerId = assignmentSelections[submissionId];
+    if (!reviewerId) return;
+    setBusyId(submissionId);
+    setError("");
+    setSuccess("");
+    try {
+      const { data } = await api.post("/api/review-assignments", {
+        resource_type: "content",
+        resource_id: submissionId,
+        reviewer_id: reviewerId,
+      });
+      setSuccess(`Assigned to ${data.reviewer_name}.`);
+      await load();
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, "Review assignment could not be saved."));
+    } finally {
+      setBusyId("");
+    }
+  }
 
   function getFileIcon(filename) {
     const ext = filename?.split(".").pop()?.toLowerCase();
@@ -271,6 +310,12 @@ export default function ReviewsPage() {
               const highestSeverity = getSubmissionSeverity(submission.id);
               const isPending = !submission.review_status || submission.review_status === "pending";
               const isExpanded = expandedId === submission.id;
+              const currentAssignment = assignments.find(
+                (assignment) =>
+                  assignment.resource_type === "content"
+                  && assignment.resource_id === submission.id
+                  && assignment.status === "pending",
+              );
 
               return (
                 <div
@@ -308,6 +353,34 @@ export default function ReviewsPage() {
 
                     {/* Action buttons matching screenshot */}
                     <div className="flex items-center gap-2">
+                      {canAssign && isPending && (
+                        <>
+                          <select
+                            aria-label={`Assign ${submission.filename} to reviewer`}
+                            value={assignmentSelections[submission.id] || currentAssignment?.reviewer_id || ""}
+                            onChange={(event) =>
+                              setAssignmentSelections({
+                                ...assignmentSelections,
+                                [submission.id]: event.target.value,
+                              })
+                            }
+                            className="max-w-40 rounded-lg border border-navy-700 bg-navy-800 px-2 py-1.5 text-xs text-slate-200"
+                          >
+                            <option value="">Assign reviewer</option>
+                            {reviewers.map((reviewer) => (
+                              <option key={reviewer.id} value={reviewer.id}>{reviewer.full_name}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={busyId === submission.id || !(assignmentSelections[submission.id] || currentAssignment?.reviewer_id)}
+                            onClick={() => assignSubmission(submission.id)}
+                            className="rounded-lg border border-navy-700 bg-navy-800 px-3 py-1.5 text-xs font-semibold text-slate-300 disabled:opacity-50"
+                          >
+                            Assign
+                          </button>
+                        </>
+                      )}
                       {isPending && canReview ? (
                         <>
                           <button

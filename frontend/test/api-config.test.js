@@ -24,7 +24,7 @@ test("uses safe default timeouts when no override is provided", () => {
   assert.deepEqual(resolveApiConfig(), {
     baseURL: "",
     timeout: 15_000,
-    aiRequestTimeout: 130_000,
+    aiRequestTimeout: 240_000,
   });
   assert.equal(LOGIN_REQUEST_TIMEOUT_MS, 90_000);
 });
@@ -57,7 +57,7 @@ test("normalizes a valid production API origin", () => {
     {
       baseURL: "https://api.example.com",
       timeout: 15_000,
-      aiRequestTimeout: 130_000,
+      aiRequestTimeout: 240_000,
     },
   );
 });

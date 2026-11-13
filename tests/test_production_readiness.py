@@ -1,3 +1,6 @@
+import tempfile
+from pathlib import Path
+
 import pytest
 
 from app.core.config import Settings, settings
@@ -16,6 +19,9 @@ def _production_settings(**overrides):
         "clamav_host": "clamav.internal",
         "frontend_url": "https://brandguard.example",
         "allowed_origins": "https://brandguard.example",
+        "persistent_storage_root": str(Path.cwd() / "production-storage"),
+        "upload_directory": str(Path.cwd() / "production-storage" / "uploads"),
+        "chroma_persist_directory": str(Path.cwd() / "production-storage" / "chroma"),
     }
     values.update(overrides)
     return Settings(**values)
@@ -179,6 +185,41 @@ def test_production_configuration_requires_scanner_and_exact_https_origins():
         _production_settings(
             database_url="postgresql+psycopg://user:password@db.example/brandguard"
         )
+
+
+def test_production_configuration_requires_explicit_durable_storage():
+    values = _production_settings().model_dump()
+    values.pop("upload_directory")
+    with pytest.raises(ValueError, match="UPLOAD_DIRECTORY"):
+        Settings(**values)
+
+    temporary_directory = str(Path(tempfile.gettempdir()) / "brandguard-uploads")
+    with pytest.raises(ValueError, match="temporary storage"):
+        _production_settings(upload_directory=temporary_directory)
+
+    with pytest.raises(ValueError, match="under PERSISTENT_STORAGE_ROOT"):
+        _production_settings(
+            chroma_persist_directory=str(Path.cwd() / "outside-persistent-volume")
+        )
+
+
+def test_production_startup_requires_writable_mounted_storage(
+    monkeypatch, tmp_path
+):
+    from app.core.config import settings
+    from app.main import ensure_production_storage
+
+    monkeypatch.setattr(settings, "persistent_storage_root", str(tmp_path))
+    monkeypatch.setattr(settings, "upload_directory", str(tmp_path / "uploads"))
+    monkeypatch.setattr(settings, "chroma_persist_directory", str(tmp_path / "chroma"))
+    monkeypatch.setattr(Path, "is_mount", lambda _path: False)
+    with pytest.raises(RuntimeError, match="not an attached filesystem mount"):
+        ensure_production_storage()
+
+    monkeypatch.setattr(Path, "is_mount", lambda _path: True)
+    ensure_production_storage()
+    assert (tmp_path / "uploads").is_dir()
+    assert (tmp_path / "chroma").is_dir()
 
 
 def test_demo_configuration_does_not_require_clamav():

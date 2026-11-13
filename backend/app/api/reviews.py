@@ -7,6 +7,10 @@ from app.database.session import get_db
 from app.models.entities import ApprovalHistory, ContentSubmission, User
 from app.schemas.reviews import ReviewDecision, ReviewRead
 from app.services.audit import record_audit
+from app.services.review_assignments import (
+    can_review_assignment,
+    complete_pending_assignments,
+)
 
 router = APIRouter(prefix="/api/reviews", tags=["human review"])
 REVIEW_ROLES = ("admin", "brand_manager", "reviewer")
@@ -32,6 +36,10 @@ def _record_decision(
     )
     if submission is None:
         raise HTTPException(status_code=404, detail="Content submission not found.")
+    if user.role == "reviewer" and not can_review_assignment(
+        db, user.organization_id, "content", submission.id, user.id
+    ):
+        raise HTTPException(status_code=403, detail="This item is assigned to another reviewer.")
     previous_status = submission.review_status
     submission.review_status = DECISION_STATUS[decision]
     history = ApprovalHistory(
@@ -46,6 +54,7 @@ def _record_decision(
     db.add(history)
     db.flush()
     record_audit(db, user, f"review.{decision}", "content_submission", submission.id)
+    complete_pending_assignments(db, user.organization_id, "content", submission.id)
     db.commit()
     db.refresh(history)
     return history

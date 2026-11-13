@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.session import Base
@@ -76,7 +76,136 @@ class BrandAsset(Base):
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     media_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    asset_kind: Mapped[str] = mapped_column(
+        String(32), default="creative", server_default="creative", nullable=False
+    )
+    approved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class VisualAnalysisRecord(Base):
+    __tablename__ = "visual_analysis_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    asset_id: Mapped[str] = mapped_column(ForeignKey("brand_assets.id"), index=True)
+    submission_id: Mapped[str | None] = mapped_column(
+        ForeignKey("content_submissions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    analyzed_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    provider_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    result_json: Mapped[str] = mapped_column(Text, nullable=False)
+    review_status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class VisualReviewHistory(Base):
+    __tablename__ = "visual_review_history"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    visual_analysis_id: Mapped[str] = mapped_column(
+        ForeignKey("visual_analysis_records.id"), index=True
+    )
+    reviewer_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    decision: Mapped[str] = mapped_column(String(24), nullable=False)
+    previous_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ClaimVerificationRecord(Base):
+    __tablename__ = "claim_verification_records"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    submission_id: Mapped[str | None] = mapped_column(
+        ForeignKey("content_submissions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    analysis_id: Mapped[str | None] = mapped_column(
+        ForeignKey("analysis_results.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    verified_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    claim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    claim_type: Mapped[str] = mapped_column(
+        String(32), default="objective_factual", server_default="objective_factual", nullable=False
+    )
+    time_sensitive: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    provider_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    assessment_status: Mapped[str] = mapped_column(
+        String(32), default="not_attempted", server_default="not_attempted", nullable=False
+    )
+    assessment_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    assessment_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assessment_source_ids_json: Mapped[str] = mapped_column(
+        Text, default="[]", server_default="[]", nullable=False
+    )
+    assessment_error_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    assessment_error_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    retrieval_timestamp: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_verified_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False)
+    review_status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ClaimVerificationReviewHistory(Base):
+    __tablename__ = "claim_verification_review_history"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    claim_verification_id: Mapped[str] = mapped_column(
+        ForeignKey("claim_verification_records.id"), index=True
+    )
+    reviewer_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    previous_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ReviewAssignment(Base):
+    __tablename__ = "review_assignments"
+    __table_args__ = (
+        CheckConstraint(
+            "(CASE WHEN content_submission_id IS NOT NULL THEN 1 ELSE 0 END + "
+            "CASE WHEN visual_analysis_id IS NOT NULL THEN 1 ELSE 0 END + "
+            "CASE WHEN claim_verification_id IS NOT NULL THEN 1 ELSE 0 END) = 1",
+            name="ck_review_assignment_one_resource",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    reviewer_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    assigned_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    content_submission_id: Mapped[str | None] = mapped_column(
+        ForeignKey("content_submissions.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    visual_analysis_id: Mapped[str | None] = mapped_column(
+        ForeignKey("visual_analysis_records.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    claim_verification_id: Mapped[str | None] = mapped_column(
+        ForeignKey("claim_verification_records.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(24), default="pending", server_default="pending", nullable=False
+    )
+    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class BrandRule(Base):
