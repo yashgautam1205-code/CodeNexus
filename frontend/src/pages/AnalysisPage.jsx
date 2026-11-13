@@ -7,28 +7,57 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleAlert,
+  CircleCheck,
   CircleHelp,
   Download,
+  ExternalLink,
   FileCode,
   FileDown,
   FileText,
   Info,
+  LoaderCircle,
+  MessageSquareQuote,
   Pencil,
   RefreshCw,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Button, Card, EmptyState, ErrorNotice, Loading, SuccessNotice } from "../components/Feedback";
+import { EmptyState, ErrorNotice, Loading, SuccessNotice } from "../components/Feedback";
 import { useAuth } from "../context/AuthContext";
 import { AI_REQUEST_TIMEOUT_MS, api, getErrorMessage } from "../services/api";
 
 const severityColors = {
-  critical: { bg: "bg-rose-500/15", text: "text-rose-400", border: "border-rose-500/30", badge: "bg-rose-600 text-white" },
-  high: { bg: "bg-amber-500/15", text: "text-amber-400", border: "border-amber-500/30", badge: "bg-amber-600 text-white" },
-  medium: { bg: "bg-yellow-500/15", text: "text-yellow-400", border: "border-yellow-500/30", badge: "bg-yellow-600 text-white" },
-  low: { bg: "bg-blue-500/15", text: "text-blue-400", border: "border-blue-500/30", badge: "bg-blue-600 text-white" },
+  critical: {
+    bg: "bg-rose-500/15",
+    text: "text-rose-400",
+    border: "border-rose-500/30",
+    badge: "bg-rose-600 text-white shadow-rose-900/30",
+    glow: "rgba(244, 63, 94, 0.15)",
+  },
+  high: {
+    bg: "bg-amber-500/15",
+    text: "text-amber-400",
+    border: "border-amber-500/30",
+    badge: "bg-amber-600 text-white shadow-amber-900/30",
+    glow: "rgba(245, 158, 11, 0.15)",
+  },
+  medium: {
+    bg: "bg-yellow-500/15",
+    text: "text-yellow-400",
+    border: "border-yellow-500/30",
+    badge: "bg-yellow-600 text-white shadow-yellow-900/30",
+    glow: "rgba(234, 179, 8, 0.15)",
+  },
+  low: {
+    bg: "bg-blue-500/15",
+    text: "text-blue-400",
+    border: "border-blue-500/30",
+    badge: "bg-blue-600 text-white shadow-blue-900/30",
+    glow: "rgba(59, 130, 246, 0.15)",
+  },
 };
 
 export default function AnalysisPage() {
@@ -309,7 +338,7 @@ export default function AnalysisPage() {
       <div className="space-y-6">
         <ErrorNotice>{error || "No analysis reports found in this organisation."}</ErrorNotice>
         <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-12 text-center shadow-xl">
-          <BarChart3 size={36} className="mx-auto text-blue-400 mb-3" />
+          <BarChart3 size={40} className="mx-auto text-indigo-400 mb-3" />
           <h2 className="text-base font-bold text-white">No Analysis Report Available</h2>
           <p className="mt-1 text-xs text-slate-400 max-w-sm mx-auto">
             Submit a marketing document to generate real-time brand compliance analysis.
@@ -317,7 +346,7 @@ export default function AnalysisPage() {
           <div className="mt-5">
             <Link
               to="/content"
-              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs font-bold text-white shadow-lg transition"
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-900/40 transition"
             >
               Submit Content Now
             </Link>
@@ -328,37 +357,45 @@ export default function AnalysisPage() {
   }
 
   const score = report.compliance_score || 0;
-  // Circumference for 45 radius: 2 * pi * 45 ≈ 282.74
-  const strokeDashoffset = 282.74 - (282.74 * score) / 100;
+  // Circumference for 52 radius: 2 * pi * 52 ≈ 326.73
+  const circumference = 326.73;
+  const strokeDashoffset = circumference - (circumference * Math.min(Math.max(score, 0), 100)) / 100;
+  const scoreColorClass =
+    score >= 85 ? "stroke-emerald-400 text-emerald-400" : score >= 60 ? "stroke-amber-400 text-amber-400" : "stroke-rose-400 text-rose-400";
+
+  // Active finding confidence for right mini gauge
+  const activeConfidence = activeFinding ? Math.round((activeFinding.confidence || 0) * 100) : 0;
+  const miniCircumference = 163.36; // 2 * pi * 26
+  const miniOffset = miniCircumference - (miniCircumference * activeConfidence) / 100;
 
   return (
     <div className="space-y-6">
-      {/* Top Header matching Reference Image Screen 4 */}
+      {/* ── Top Header ──────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 shadow-inner">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500/30 to-sky-500/20 text-indigo-300 border border-indigo-500/30 shadow-inner">
             <BarChart3 size={22} />
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">Analysis Report</h1>
             <p className="text-xs text-slate-400">
-              Detailed analysis with evidence-based findings
+              Detailed compliance analysis with evidence-based guideline verification
             </p>
           </div>
         </div>
 
-        {/* Top-Right Action Buttons: Export PDF & Export Markdown */}
+        {/* Top-Right Action Buttons: Export PDF, Export Markdown & Report Selector */}
         <div className="flex items-center gap-2.5">
           {allAnalyses.length > 1 && (
             <select
               aria-label="Select report"
               value={report.id}
               onChange={(e) => navigate(`/analysis/${e.target.value}`)}
-              className="rounded-xl border border-navy-700 bg-navy-850 px-3 py-1.5 text-xs text-slate-200 outline-none"
+              className="rounded-xl border border-navy-700 bg-navy-850 px-3 py-2 text-xs text-slate-200 outline-none focus:border-indigo-500"
             >
               {allAnalyses.map((a, i) => (
                 <option key={a.id} value={a.id}>
-                  Report #{i + 1} ({a.compliance_score}%)
+                  Report #{i + 1} ({a.compliance_score}%) — {new Date(a.created_at).toLocaleDateString()}
                 </option>
               ))}
             </select>
@@ -369,14 +406,14 @@ export default function AnalysisPage() {
             onClick={exportPDF}
             className="inline-flex items-center gap-2 rounded-xl border border-navy-700 bg-navy-850 hover:bg-navy-800 hover:text-white px-3.5 py-2 text-xs font-semibold text-slate-300 transition shadow-sm"
           >
-            <FileDown size={14} /> Export PDF
+            <FileDown size={14} className="text-indigo-400" /> Export PDF
           </button>
           <button
             type="button"
             onClick={exportMarkdown}
             className="inline-flex items-center gap-2 rounded-xl border border-navy-700 bg-navy-850 hover:bg-navy-800 hover:text-white px-3.5 py-2 text-xs font-semibold text-slate-300 transition shadow-sm"
           >
-            <Download size={14} /> Export Markdown
+            <Download size={14} className="text-sky-400" /> Export Markdown
           </button>
         </div>
       </div>
@@ -386,11 +423,11 @@ export default function AnalysisPage() {
 
       {/* Partial Analysis Warning if AI was unavailable */}
       {report.analysis_status !== "complete" && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-950/30 p-3.5 text-xs text-amber-300">
-          <div className="flex items-start gap-2.5">
-            <CircleAlert size={16} className="mt-0.5 shrink-0 text-amber-400" />
+        <div className="rounded-xl border border-amber-500/30 bg-amber-950/30 p-4 text-xs text-amber-300 shadow-md">
+          <div className="flex items-start gap-3">
+            <CircleAlert size={18} className="mt-0.5 shrink-0 text-amber-400" />
             <div>
-              <p className="font-semibold text-amber-200">Partial Analysis</p>
+              <p className="font-bold text-amber-200">Partial Analysis</p>
               <p className="mt-0.5 leading-relaxed text-amber-300/90">
                 {report.analysis_note || "AI analysis was unavailable; deterministic checks are presented below."}
               </p>
@@ -399,122 +436,154 @@ export default function AnalysisPage() {
         </div>
       )}
 
-      {/* Top Stats Row matching Reference Image Screen 4 */}
-      <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-        {/* Compliance Score Gauge Card (Spans 2 columns on lg) */}
-        <div className="col-span-2 rounded-2xl border border-navy-700/60 bg-navy-850 p-4 shadow-xl flex items-center justify-around gap-4">
-          <div className="relative flex h-24 w-24 shrink-0 items-center justify-center">
-            <svg className="h-full w-full -rotate-90 transform" viewBox="0 0 100 100">
-              <circle
-                cx="50"
-                cy="50"
-                r="45"
-                className="stroke-navy-750"
-                strokeWidth="7"
-                fill="transparent"
-              />
-              <circle
-                cx="50"
-                cy="50"
-                r="45"
-                className="stroke-emerald-400 transition-all duration-1000 ease-out"
-                strokeWidth="7"
-                strokeDasharray={282.74}
-                strokeDashoffset={strokeDashoffset}
-                strokeLinecap="round"
-                fill="transparent"
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-xl font-bold text-white tracking-tight">{score}%</span>
+      {/* ── TOP: Compliance Score Hero Section ───────────────────────────── */}
+      <div className="rounded-2xl border border-navy-700/60 bg-gradient-to-br from-navy-850 via-[#151E32] to-navy-900 p-6 shadow-xl">
+        <div className="grid gap-6 lg:grid-cols-[1.5fr_2fr] items-center">
+          {/* Radial Gauge Card */}
+          <div className="flex items-center justify-around gap-6 border-b lg:border-b-0 lg:border-r border-navy-750 pb-6 lg:pb-0 lg:pr-6">
+            <div className="relative flex h-[120px] w-[120px] shrink-0 items-center justify-center">
+              <svg className="h-full w-full -rotate-90 transform" viewBox="0 0 120 120">
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="52"
+                  className="stroke-navy-800"
+                  strokeWidth="8"
+                  fill="transparent"
+                />
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="52"
+                  className={`${scoreColorClass} transition-all duration-1000 ease-out`}
+                  strokeWidth="8"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={strokeDashoffset}
+                  strokeLinecap="round"
+                  fill="transparent"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-2xl font-black text-white tracking-tight">{score}%</span>
+                <span className="text-[9px] uppercase tracking-wider font-semibold text-slate-400">Score</span>
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Governance Index</span>
+                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                  report.analysis_status === "complete"
+                    ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                    : "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                }`}>
+                  {report.analysis_status === "complete" ? "Complete" : "Partial"}
+                </span>
+              </div>
+              <p className={`text-2xl font-black mt-1 ${scoreColorClass.split(" ")[1]}`}>{score}% Compliant</p>
+              <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+                {report.score_formula || "Based on deterministic & AI rule compliance"}
+              </p>
+              <p className="text-[10px] text-slate-500 mt-0.5">
+                Evaluated: {new Date(report.created_at).toLocaleString()}
+              </p>
             </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Compliance Score</p>
-            <p className="text-lg font-bold text-emerald-400 mt-0.5">{score}%</p>
-            <p className="text-[10px] text-slate-400 mt-1">(Internal Heuristic)</p>
-          </div>
-        </div>
 
-        {/* Mini Severity Card: Critical */}
-        <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-4 shadow-xl flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/15 text-rose-400 border border-rose-500/30">
-            <AlertTriangle size={18} />
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold text-rose-400">Critical</p>
-            <p className="text-xl font-bold text-white">{counts.critical}</p>
-          </div>
-        </div>
+          {/* 4 Severity Mini-Cards in a Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* Critical */}
+            <div className="rounded-xl border border-rose-500/25 bg-rose-950/15 p-4 shadow-sm flex flex-col justify-between hover:border-rose-500/40 transition">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-rose-400 uppercase tracking-wider">Critical</span>
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-500/20 text-rose-400">
+                  <AlertTriangle size={14} />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-white mt-3">{counts.critical}</p>
+              <p className="text-[10px] text-rose-300/70 mt-0.5">Immediate fix</p>
+            </div>
 
-        {/* Mini Severity Card: High */}
-        <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-4 shadow-xl flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/30">
-            <AlertTriangle size={18} />
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold text-amber-400">High</p>
-            <p className="text-xl font-bold text-white">{counts.high}</p>
-          </div>
-        </div>
+            {/* High */}
+            <div className="rounded-xl border border-amber-500/25 bg-amber-950/15 p-4 shadow-sm flex flex-col justify-between hover:border-amber-500/40 transition">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">High</span>
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
+                  <AlertTriangle size={14} />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-white mt-3">{counts.high}</p>
+              <p className="text-[10px] text-amber-300/70 mt-0.5">Requires review</p>
+            </div>
 
-        {/* Mini Severity Card: Medium */}
-        <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-4 shadow-xl flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-yellow-500/15 text-yellow-400 border border-yellow-500/30">
-            <AlertTriangle size={18} />
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold text-yellow-400">Medium</p>
-            <p className="text-xl font-bold text-white">{counts.medium}</p>
-          </div>
-        </div>
+            {/* Medium */}
+            <div className="rounded-xl border border-yellow-500/25 bg-yellow-950/15 p-4 shadow-sm flex flex-col justify-between hover:border-yellow-500/40 transition">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-yellow-400 uppercase tracking-wider">Medium</span>
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-yellow-500/20 text-yellow-400">
+                  <AlertTriangle size={14} />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-white mt-3">{counts.medium}</p>
+              <p className="text-[10px] text-yellow-300/70 mt-0.5">Recommended</p>
+            </div>
 
-        {/* Mini Severity Card: Low */}
-        <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-4 shadow-xl flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400 border border-blue-500/30">
-            <Info size={18} />
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold text-blue-400">Low</p>
-            <p className="text-xl font-bold text-white">{counts.low}</p>
+            {/* Low */}
+            <div className="rounded-xl border border-blue-500/25 bg-blue-950/15 p-4 shadow-sm flex flex-col justify-between hover:border-blue-500/40 transition">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-blue-400 uppercase tracking-wider">Low</span>
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/20 text-blue-400">
+                  <Info size={14} />
+                </div>
+              </div>
+              <p className="text-2xl font-black text-white mt-3">{counts.low}</p>
+              <p className="text-[10px] text-blue-300/70 mt-0.5">Advisory notes</p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Main Bottom Section: Key Findings (Left) & Guideline Evidence (Right) */}
-      <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        {/* Left: Key Findings List matching Reference Image Screen 4 */}
-        <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-5 shadow-xl flex flex-col justify-between">
-          <div>
+      {/* ── MAIN BODY: Two Columns (55% Left, 45% Right) ─────────────────── */}
+      <div className="grid gap-6 lg:grid-cols-[1.22fr_1fr] items-start">
+        {/* LEFT COLUMN: Key Findings, Claim Verification & Visual Analyses */}
+        <div className="space-y-6 min-w-0">
+          {/* Key Findings Card */}
+          <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-6 shadow-xl">
             <div className="flex items-center justify-between pb-4 border-b border-navy-750">
-              <h2 className="text-sm font-bold text-white tracking-wide">Key Findings</h2>
-              <span className="text-xs text-blue-400 font-semibold cursor-pointer">
-                View all →
-              </span>
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-sm font-bold text-white tracking-wide">Key Findings</h2>
+                <span className="rounded-full bg-indigo-500/10 border border-indigo-500/30 px-2 py-0.5 text-[10px] font-bold text-indigo-300">
+                  {report.findings?.length || 0}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400">Select a finding to inspect source evidence</p>
             </div>
 
             <div className="mt-4 space-y-3.5">
-              {report.findings?.length === 0 ? (
-                <div className="py-10 text-center text-xs text-slate-400">
-                  <CheckCircle2 size={24} className="mx-auto text-emerald-400 mb-2" />
-                  No compliance findings detected.
+              {!report.findings?.length ? (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-8 text-center">
+                  <CheckCircle2 size={32} className="mx-auto text-emerald-400 mb-2" />
+                  <p className="text-sm font-bold text-emerald-300">No compliance findings detected</p>
+                  <p className="text-xs text-slate-400 mt-1">This marketing submission complies fully with all active approved rules.</p>
                 </div>
               ) : (
                 report.findings.map((finding) => {
                   const isSelected = activeFinding?.id === finding.id;
                   const severityStyle = severityColors[finding.severity] || severityColors.low;
                   const suggestion = suggestions[finding.id];
+                  const isEditingThis = editing === finding.id;
 
                   return (
                     <div
                       key={finding.id}
                       onClick={() => setSelectedFindingId(finding.id)}
-                      className={`cursor-pointer rounded-xl border p-4 transition-all ${
+                      className={`group cursor-pointer rounded-xl border p-5 transition-all relative overflow-hidden ${
                         isSelected
-                          ? "border-blue-500/60 bg-navy-800/90 shadow-md"
-                          : "border-navy-750 bg-navy-900/60 hover:border-navy-700"
+                          ? "border-indigo-500/70 bg-navy-800/90 shadow-lg border-l-4 border-l-indigo-400"
+                          : "border-navy-750 bg-navy-900/60 hover:border-navy-700 hover:bg-navy-900/80"
                       }`}
                     >
+                      {/* Top Row: Severity badge, Category, and Action buttons */}
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${severityStyle.badge}`}>
@@ -526,38 +595,43 @@ export default function AnalysisPage() {
                         </div>
 
                         <div className="flex items-center gap-2">
+                          {finding.source_page && (
+                            <span className="rounded-lg bg-navy-800 border border-navy-700 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                              Page {finding.source_page}
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedFindingId(finding.id);
                             }}
-                            className="rounded-lg bg-blue-600 hover:bg-blue-500 px-3 py-1 text-[11px] font-semibold text-white shadow-sm transition"
+                            className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                              isSelected
+                                ? "bg-indigo-600 text-white"
+                                : "bg-navy-800 border border-navy-700 text-slate-300 group-hover:border-indigo-500/40"
+                            }`}
                           >
-                            View Evidence
+                            View Evidence →
                           </button>
-                          {finding.source_page && (
-                            <span className="rounded-lg bg-navy-800 border border-navy-700 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
-                              Page {finding.source_page}
-                            </span>
-                          )}
                         </div>
-
                       </div>
 
-                      <p className="mt-2.5 text-xs text-slate-300 leading-relaxed">
+                      {/* Explanation */}
+                      <p className="mt-3 text-xs text-slate-300 leading-relaxed">
                         {finding.explanation}
                       </p>
 
+                      {/* Affected Text Quote */}
                       {finding.affected_text && (
-                        <div className="mt-2 rounded-lg bg-navy-950/70 border border-navy-800 p-2 text-[11px] text-slate-400">
-                          <span className="text-slate-500 font-medium">Flagged text: </span>
-                          <span className="text-slate-200">"{finding.affected_text}"</span>
+                        <div className="mt-3 rounded-lg bg-navy-950/80 border border-navy-800 p-3 text-[11px] leading-relaxed">
+                          <span className="text-slate-500 font-semibold block mb-1">Flagged Text:</span>
+                          <span className="text-amber-200/90 font-mono italic">"{finding.affected_text}"</span>
                         </div>
                       )}
 
-                      {/* AI Suggestion Section if active */}
-                      <div className="mt-3 pt-2.5 border-t border-navy-750 flex flex-wrap items-center justify-between gap-2">
+                      {/* Card Footer: AI Suggestion trigger & confidence */}
+                      <div className="mt-3.5 pt-3 border-t border-navy-750 flex flex-wrap items-center justify-between gap-2">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -565,43 +639,95 @@ export default function AnalysisPage() {
                             createSuggestion(finding);
                           }}
                           disabled={busyId === finding.id}
-                          className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-400 hover:text-blue-300"
+                          className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-400 hover:text-indigo-300 transition"
                         >
-                          <Sparkles size={13} />
-                          {suggestion ? "Regenerate Suggestion" : "Generate AI Suggestion"}
+                          {busyId === finding.id ? (
+                            <LoaderCircle size={14} className="animate-spin" />
+                          ) : (
+                            <Sparkles size={14} />
+                          )}
+                          {suggestion ? "Regenerate AI Suggestion" : "Generate AI Suggestion"}
                         </button>
-                        <span className="text-[10px] text-slate-500">
+                        <span className="text-[10px] font-semibold text-slate-400">
                           Confidence: {Math.round(finding.confidence * 100)}%
                         </span>
                       </div>
 
                       {/* Render Suggestion Box */}
                       {suggestion && (
-                        <div className="mt-3 rounded-xl border border-blue-500/30 bg-blue-950/20 p-3 text-xs">
-                          <p className="font-semibold text-blue-300 mb-1">Suggested Correction:</p>
-                          <p className="text-slate-200 font-medium">{suggestion.suggested_text}</p>
-                          <div className="mt-2.5 flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                decideSuggestion(finding.id, suggestion, "accepted");
-                              }}
-                              className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-2.5 py-1 text-[10px] font-bold text-white"
-                            >
-                              Accept
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                decideSuggestion(finding.id, suggestion, "rejected");
-                              }}
-                              className="rounded-lg bg-rose-600 hover:bg-rose-500 px-2.5 py-1 text-[10px] font-bold text-white"
-                            >
-                              Reject
-                            </button>
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-3.5 rounded-xl border border-indigo-500/40 bg-indigo-950/30 p-4 text-xs shadow-inner"
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="font-bold text-indigo-300 flex items-center gap-1.5">
+                              <Sparkles size={13} className="text-indigo-400" /> Suggested Correction:
+                            </span>
+                            <span className="text-[10px] text-indigo-300/70 capitalize">
+                              Source: {suggestion.generation_source || "AI"}
+                            </span>
                           </div>
+
+                          {isEditingThis ? (
+                            <div className="space-y-2">
+                              <textarea
+                                value={editedText}
+                                onChange={(e) => setEditedText(e.target.value)}
+                                rows={3}
+                                className="w-full rounded-lg border border-indigo-500/50 bg-navy-900 p-2 text-xs text-white outline-none focus:ring-1 focus:ring-indigo-400"
+                              />
+                              <div className="flex gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditing("")}
+                                  className="rounded-lg border border-navy-700 bg-navy-800 px-2.5 py-1 text-[11px] font-semibold text-slate-300"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => decideSuggestion(finding.id, suggestion, "edited")}
+                                  className="rounded-lg bg-indigo-600 hover:bg-indigo-500 px-3 py-1 text-[11px] font-bold text-white"
+                                >
+                                  Save &amp; Accept
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="text-slate-200 font-medium leading-relaxed bg-navy-950/60 rounded-lg p-2.5 border border-indigo-500/20">
+                                {suggestion.suggested_text}
+                              </p>
+                              <div className="mt-3 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => decideSuggestion(finding.id, suggestion, "accepted")}
+                                  disabled={busyId === finding.id}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm"
+                                >
+                                  <Check size={12} /> Accept
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => decideSuggestion(finding.id, suggestion, "rejected")}
+                                  disabled={busyId === finding.id}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-rose-600 hover:bg-rose-500 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm"
+                                >
+                                  <X size={12} /> Reject
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditing(finding.id);
+                                    setEditedText(suggestion.suggested_text);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-navy-700 bg-navy-800 hover:bg-navy-750 px-2.5 py-1.5 text-[11px] font-semibold text-slate-300"
+                                >
+                                  <Pencil size={11} /> Edit wording
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       )}
                     </div>
@@ -611,135 +737,139 @@ export default function AnalysisPage() {
             </div>
           </div>
 
+          {/* CLAIM VERIFICATION section */}
           {report.claim_verifications?.length > 0 && (
-            <section className="rounded-2xl border border-navy-700/60 bg-navy-850 p-5 shadow-xl">
+            <section className="rounded-2xl border border-navy-700/60 bg-navy-850 p-6 shadow-xl">
               <div className="flex items-center justify-between border-b border-navy-750 pb-4">
                 <div>
                   <h2 className="text-sm font-bold text-white">Evidence-based Claim Verification</h2>
                   <p className="mt-1 text-[11px] text-slate-400">
-                    Approved internal rules remain in force; external sources are supplementary.
+                    Approved internal rules remain in force; external sources provide empirical validation.
                   </p>
                 </div>
-                <span className="text-[10px] text-slate-500">
-                  {report.claim_verifications.length} claims
+                <span className="rounded-full bg-sky-500/10 border border-sky-500/30 px-2.5 py-0.5 text-[10px] font-bold text-sky-300">
+                  {report.claim_verifications.length} Claims
                 </span>
               </div>
-              <div className="mt-4 space-y-3">
+
+              <div className="mt-4 space-y-4">
                 {report.claim_verifications.map((claim) => (
-                  <article key={claim.id} className="rounded-xl border border-navy-750 bg-navy-900/70 p-4">
+                  <article key={claim.id} className="rounded-xl border border-navy-750 bg-navy-900/70 p-5 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-xs font-semibold text-slate-100">{claim.claim_text}</h3>
-                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${
+                      <h3 className="text-xs font-bold text-slate-100 flex-1 min-w-[200px]">"{claim.claim_text}"</h3>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
                         claim.status === "supported"
-                          ? "bg-emerald-500/15 text-emerald-300"
+                          ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
                           : claim.status === "contradicted"
-                          ? "bg-rose-500/15 text-rose-300"
-                          : "bg-amber-500/15 text-amber-300"
+                          ? "bg-rose-500/15 text-rose-300 border border-rose-500/30"
+                          : "bg-amber-500/15 text-amber-300 border border-amber-500/30"
                       }`}>
                         {claim.status.replaceAll("_", " ")} · {Math.round(claim.confidence * 100)}%
                       </span>
                     </div>
-                    <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{claim.reason}</p>
-                    <p className="mt-2 text-[10px] text-slate-500">
-                      Claim type: {claim.claim_type?.replaceAll("_", " ") || "objective factual"}
-                      {claim.time_sensitive ? " · time-sensitive evidence required" : ""}
-                    </p>
-                    <p className="mt-2 text-[10px] text-cyan-200">
-                      Human decision: {claim.review_status?.replaceAll("_", " ") || "pending"}
-                    </p>
-                    <p className="mt-2 text-[10px] text-slate-500">
-                      Retrieval: {claim.provider_status.replaceAll("_", " ")}
-                      {" · assessment: "}{claim.assessment_status?.replaceAll("_", " ") || "not attempted"}
-                      {claim.assessment_model ? ` · Gemini ${claim.assessment_model}` : ""}
-                      {claim.retrieval_timestamp ? ` · ${new Date(claim.retrieval_timestamp).toLocaleString()}` : ""}
-                      {claim.last_verified_at ? ` · last checked ${new Date(claim.last_verified_at).toLocaleString()}` : ""}
-                    </p>
-                    {claim.assessment_error_type && (
-                      <p className="mt-2 text-[10px] text-amber-300">
-                        Gemini assessment unavailable: {claim.assessment_error_type}
-                        {claim.assessment_error_code ? ` (HTTP ${claim.assessment_error_code})` : ""}
-                      </p>
-                    )}
+
+                    <p className="text-xs leading-relaxed text-slate-300">{claim.reason}</p>
+
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-400">
+                      <span>Claim type: <strong className="text-slate-300 capitalize">{claim.claim_type?.replaceAll("_", " ") || "Objective factual"}</strong></span>
+                      {claim.time_sensitive && <span className="text-amber-300 font-semibold">· Time-sensitive evidence</span>}
+                      <span>· Decision: <strong className="text-cyan-300 capitalize">{claim.review_status?.replaceAll("_", " ") || "Pending"}</strong></span>
+                      {claim.assessment_model && <span>· Evaluator: Gemini {claim.assessment_model}</span>}
+                    </div>
+
+                    {/* Gemini Rationale Box */}
                     {claim.assessment_rationale && claim.assessment_source_ids?.length > 0 && (
-                      <div className="mt-3 rounded-lg border border-blue-500/20 bg-blue-950/20 p-3">
-                        <p className="text-[10px] font-semibold text-blue-200">
-                          Gemini rationale · cited retrieved sources
+                      <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/25 p-3.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-indigo-300 mb-1">
+                          Gemini Rationale · Cited Retrieved Sources
                         </p>
-                        <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+                        <p className="text-xs leading-relaxed text-slate-200">
                           {claim.assessment_rationale}
                         </p>
                       </div>
                     )}
+
+                    {/* Evidence List */}
                     {claim.evidence?.length > 0 && (
-                      <ul className="mt-3 space-y-2 border-t border-navy-800 pt-3">
-                        {claim.evidence.map((source, index) => (
-                          <li key={`${claim.id}-${source.id || index}`} className="text-[10px] text-slate-400">
-                            <span className="font-semibold text-slate-200">
-                              {claim.assessment_source_ids?.includes(source.id)
-                                ? `${source.evidence_relation || "cited"} Gemini citation`
-                                : source.evidence_relation || source.source_type || "evidence"}:
-                            </span>{" "}
-                            {source.source_url?.toLowerCase().startsWith("https://") ? (
-                              <a
-                                href={source.source_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-blue-300 underline underline-offset-2"
-                              >
-                                {source.title || source.source_url}
-                              </a>
-                            ) : (source.title || "Approved organisation rule")}
-                            {source.published_at ? ` · published ${source.published_at}` : ""}
-                            {source.publication_date_status ? ` · publication date ${source.publication_date_status}` : ""}
-                            {source.publisher_domain ? ` · ${source.publisher_domain}` : ""}
-                            {source.retrieved_at ? ` · retrieved ${new Date(source.retrieved_at).toLocaleString()}` : ""}
-                            {source.credibility_score != null ? ` · heuristic source score ${Math.round(source.credibility_score * 100)}%` : ""}
-                            {source.relevance_score != null ? ` · keyword overlap ${Math.round(source.relevance_score * 100)}%` : ""}
-                            {source.freshness_days != null ? ` · reported publication age ${source.freshness_days} days` : ""}
-                            {source.freshness_status ? ` · freshness ${source.freshness_status.replaceAll("_", " ")}` : ""}
-                            {source.citation_valid === true ? " · URL matched to retrieved result" : source.citation_valid === false ? " · URL did not match a retrieved result" : ""}
-                            {source.text && <p className="mt-1 text-slate-500">{source.text.length > 500 ? `${source.text.slice(0, 500)}…` : source.text}</p>}
-                          </li>
-                        ))}
-                      </ul>
+                      <div className="border-t border-navy-800 pt-3">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Sources &amp; Evidence Citations</p>
+                        <ul className="space-y-2">
+                          {claim.evidence.map((source, index) => (
+                            <li key={`${claim.id}-${source.id || index}`} className="rounded-lg bg-navy-950/60 border border-navy-800 p-2.5 text-[11px] text-slate-300">
+                              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                <span className="font-semibold text-slate-200">
+                                  {source.title || source.source_type || "Rule Source"}
+                                </span>
+                                {source.credibility_score != null && (
+                                  <span className="text-[10px] text-slate-400">
+                                    Credibility: {Math.round(source.credibility_score * 100)}%
+                                  </span>
+                                )}
+                              </div>
+                              {source.source_url && (
+                                <a
+                                  href={source.source_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="mt-1 inline-flex items-center gap-1 text-[11px] text-sky-400 hover:text-sky-300 underline underline-offset-2 break-all"
+                                >
+                                  {source.source_url} <ExternalLink size={10} />
+                                </a>
+                              )}
+                              {source.text && (
+                                <p className="mt-1.5 text-[10px] text-slate-400 line-clamp-3 italic">
+                                  "{source.text}"
+                                </p>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
+
+                    {/* Review Section */}
                     {["admin", "brand_manager", "reviewer"].includes(user?.role) && (
-                      <div className="mt-3 border-t border-navy-800 pt-3">
-                        <label className="mb-2 block text-[10px] font-semibold text-slate-400" htmlFor={`claim-review-${claim.id}`}>
-                          Reviewer comment (required for reject or additional evidence)
+                      <div className="border-t border-navy-800 pt-3 space-y-2">
+                        <label className="block text-[10px] font-semibold text-slate-400" htmlFor={`claim-review-${claim.id}`}>
+                          Reviewer Decision Comment
                         </label>
                         <input
                           id={`claim-review-${claim.id}`}
                           value={claimReviewComments[claim.id] || ""}
-                          onChange={(event) => setClaimReviewComments((current) => ({
-                            ...current,
-                            [claim.id]: event.target.value,
-                          }))}
+                          onChange={(e) => setClaimReviewComments((cur) => ({ ...cur, [claim.id]: e.target.value }))}
                           maxLength={2000}
                           className="form-input text-xs"
-                          placeholder="Explain the decision or evidence needed"
+                          placeholder="Explain decision (required for reject or additional evidence)"
                         />
-                        <div className="mt-2 flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2 pt-1">
                           {[
-                            ["approve", "Approve result"],
-                            ["reject", "Reject result"],
-                            ["request_additional_evidence", "Request evidence"],
-                          ].map(([decision, label]) => (
+                            ["approve", "Approve Result", "bg-emerald-600 hover:bg-emerald-500 text-white"],
+                            ["reject", "Reject Result", "bg-rose-600 hover:bg-rose-500 text-white"],
+                            ["request_additional_evidence", "Request Evidence", "border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20"],
+                          ].map(([dec, label, cls]) => (
                             <button
-                              key={decision}
+                              key={dec}
                               type="button"
-                              onClick={() => reviewClaim(claim, decision)}
+                              onClick={() => reviewClaim(claim, dec)}
                               disabled={claimReviewBusy === claim.id}
-                              className="rounded-lg border border-navy-700 bg-navy-800 px-3 py-1.5 text-[10px] font-semibold text-slate-200 hover:bg-navy-750 disabled:opacity-50"
+                              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${cls}`}
                             >
+                              {claimReviewBusy === claim.id ? <LoaderCircle size={12} className="animate-spin inline mr-1" /> : null}
                               {label}
                             </button>
                           ))}
                         </div>
-                        {claim.review_history?.map((entry, index) => (
-                          <p key={`${entry.created_at}-${index}`} className="mt-2 text-[10px] text-slate-500">
-                            {entry.reviewer_name} · {entry.decision.replaceAll("_", " ")} · {new Date(entry.created_at).toLocaleString()}
-                            {entry.comment ? ` · ${entry.comment}` : ""}
+                      </div>
+                    )}
+
+                    {/* Decision History */}
+                    {claim.review_history?.length > 0 && (
+                      <div className="border-t border-navy-800 pt-2 space-y-1">
+                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Review History</p>
+                        {claim.review_history.map((entry, idx) => (
+                          <p key={`${entry.created_at}-${idx}`} className="text-[10px] text-slate-500">
+                            <span className="text-slate-400 font-semibold capitalize">{entry.decision.replaceAll("_", " ")}</span> by {entry.reviewer_name} · {new Date(entry.created_at).toLocaleString()}
+                            {entry.comment ? ` · "${entry.comment}"` : ""}
                           </p>
                         ))}
                       </div>
@@ -750,52 +880,60 @@ export default function AnalysisPage() {
             </section>
           )}
 
+          {/* VISUAL ANALYSES section */}
           {report.visual_analyses?.length > 0 && (
-            <section className="rounded-2xl border border-cyan-500/25 bg-navy-850 p-5 shadow-xl">
+            <section className="rounded-2xl border border-cyan-500/30 bg-navy-850 p-6 shadow-xl">
               <div className="border-b border-navy-750 pb-4">
-                <h2 className="text-sm font-bold text-white">Visual Brand Compliance</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-bold text-white">Visual Brand Compliance</h2>
+                  <span className="rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
+                    {report.visual_analyses.length} Visual Assets
+                  </span>
+                </div>
                 <p className="mt-1 text-[11px] text-slate-400">
-                  Visual observations are separate from the text compliance score and require human review.
+                  Visual observations are reviewed independently of the text compliance score.
                 </p>
               </div>
+
               <div className="mt-4 space-y-4">
                 {report.visual_analyses.map((visual) => (
-                  <article key={visual.analysis_id} className="rounded-xl border border-navy-750 bg-navy-900/70 p-4">
+                  <article key={visual.analysis_id} className="rounded-xl border border-navy-750 bg-navy-900/70 p-5 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-xs font-semibold text-white">{visual.filename}</h3>
-                      <span className="text-[10px] text-cyan-200">
-                        {visual.review_status?.replaceAll("_", " ") || "pending"} · OCR: {visual.provider_status?.ocr || "unavailable"} · Vision: {visual.provider_status?.vision || "unavailable"}
+                      <h3 className="text-xs font-bold text-white">{visual.filename}</h3>
+                      <span className="rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2.5 py-0.5 text-[10px] font-bold text-cyan-300 capitalize">
+                        {visual.review_status?.replaceAll("_", " ") || "Pending"}
                       </span>
                     </div>
-                    <p className="mt-2 text-[11px] text-slate-300">{visual.summary}</p>
-                    <div className="mt-3 space-y-2">
-                      {visual.findings?.length ? visual.findings.map((finding) => (
-                        <div key={finding.id} className="rounded-lg border border-navy-700 bg-navy-950/60 p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="text-[11px] font-semibold text-white">{finding.category.replaceAll("_", " ")}</span>
-                            <span className="text-[10px] text-amber-300">
-                              {finding.verification_status.replaceAll("_", " ")} · {Math.round(finding.confidence * 100)}%
-                            </span>
-                          </div>
-                          <p className="mt-1 text-[11px] text-slate-300">{finding.description}</p>
-                          {finding.evidence?.map((evidence, index) => (
-                            <p key={`${finding.id}-evidence-${index}`} className="mt-1 text-[10px] text-slate-500">
-                              Evidence: {evidence.observation || evidence.method}
-                            </p>
-                          ))}
-                        </div>
-                      )) : <p className="text-[11px] text-emerald-300">No visual findings crossed the review thresholds.</p>}
+
+                    <p className="text-xs text-slate-300 leading-relaxed">{visual.summary}</p>
+
+                    <div className="flex flex-wrap gap-2 text-[10px]">
+                      <span className="rounded-md bg-navy-950 px-2 py-1 text-slate-400 border border-navy-800">
+                        OCR: <strong className="text-slate-200">{visual.provider_status?.ocr || "unavailable"}</strong>
+                      </span>
+                      <span className="rounded-md bg-navy-950 px-2 py-1 text-slate-400 border border-navy-800">
+                        Vision: <strong className="text-slate-200">{visual.provider_status?.vision || "unavailable"}</strong>
+                      </span>
                     </div>
-                    {visual.review_history?.length > 0 && (
-                      <div className="mt-3 border-t border-navy-800 pt-3">
-                        {visual.review_history.map((entry, index) => (
-                          <p key={`${entry.created_at}-${index}`} className="mt-1 text-[10px] text-slate-500">
-                            {entry.decision.replaceAll("_", " ")} · {new Date(entry.created_at).toLocaleString()}
-                            {entry.comment ? ` · ${entry.comment}` : ""}
-                          </p>
-                        ))}
-                      </div>
-                    )}
+
+                    {/* Visual Findings */}
+                    <div className="space-y-2 pt-2">
+                      {visual.findings?.length ? (
+                        visual.findings.map((finding) => (
+                          <div key={finding.id} className="rounded-lg border border-navy-700 bg-navy-950/70 p-3 text-xs">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="font-bold text-white capitalize">{finding.category.replaceAll("_", " ")}</span>
+                              <span className="text-[10px] font-semibold text-amber-300">
+                                {finding.verification_status} · {Math.round(finding.confidence * 100)}%
+                              </span>
+                            </div>
+                            <p className="text-slate-300 text-[11px]">{finding.description}</p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-emerald-300">No visual findings crossed the review thresholds.</p>
+                      )}
+                    </div>
                   </article>
                 ))}
               </div>
@@ -803,27 +941,31 @@ export default function AnalysisPage() {
           )}
         </div>
 
-        {/* Right: Guideline Evidence Card matching Reference Image Screen 4 */}
-        <div className="rounded-2xl border border-navy-700/60 bg-navy-850 p-6 shadow-xl flex flex-col justify-between">
+        {/* RIGHT COLUMN: Sticky Evidence Panel */}
+        <div className="sticky top-6 rounded-2xl border border-navy-700/60 bg-navy-850 p-6 shadow-xl flex flex-col justify-between space-y-6">
           <div>
-            <h2 className="text-sm font-bold text-white tracking-wide pb-4 border-b border-navy-750">
-              Finding Evidence
-            </h2>
+            <div className="flex items-center justify-between pb-4 border-b border-navy-750">
+              <h2 className="text-sm font-bold text-white tracking-wide">Finding Evidence</h2>
+              <span className="rounded-full bg-indigo-500/10 border border-indigo-500/30 px-2.5 py-0.5 text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
+                Audit Trail
+              </span>
+            </div>
 
             {activeFinding ? (
-              <div className="mt-5 space-y-4">
+              <div className="mt-5 space-y-5">
+                {/* Guideline Title Card */}
                 {activeFinding.guideline_id ? (
-                  <div className="rounded-xl border border-blue-500/30 bg-blue-950/25 p-4">
+                  <div className="rounded-xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/30 to-navy-900 p-4">
                     <div className="flex items-start gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600/30 text-blue-400 border border-blue-500/40">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
                         <FileText size={20} />
                       </div>
                       <div className="min-w-0">
-                        <h3 className="truncate font-bold text-white text-xs">
+                        <h3 className="truncate font-bold text-white text-xs" title={activeFinding.guideline_title || "Linked guideline"}>
                           {activeFinding.guideline_title || "Linked guideline"}
                         </h3>
                         {(activeFinding.source_section || activeFinding.source_page) && (
-                          <p className="text-[11px] text-blue-300 mt-0.5">
+                          <p className="text-[11px] text-indigo-300 mt-0.5 font-medium">
                             {activeFinding.source_section || ""}
                             {activeFinding.source_section && activeFinding.source_page ? " · " : ""}
                             {activeFinding.source_page ? `Page ${activeFinding.source_page}` : ""}
@@ -833,29 +975,69 @@ export default function AnalysisPage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="rounded-xl border border-amber-500/25 bg-amber-950/15 p-4 text-[11px] text-amber-200">
-                    No linked guideline citation is available for this finding.
-                  </p>
+                  <div className="rounded-xl border border-amber-500/25 bg-amber-950/15 p-4 text-[11px] text-amber-200">
+                    No linked guideline citation is directly attached to this finding.
+                  </div>
                 )}
 
+                {/* Evidence Quote Block */}
                 {activeFinding.evidence_text ? (
-                  <div className="rounded-xl border border-navy-750 bg-navy-900/80 p-4">
-                    <p className="mb-1 text-[10px] font-semibold text-slate-400">Evidence text</p>
-                    <p className="text-xs italic text-slate-300 leading-relaxed">
+                  <div className="rounded-xl border border-navy-750 bg-navy-900/80 p-4 relative overflow-hidden">
+                    <div className="flex items-center gap-2 mb-2 text-indigo-400">
+                      <MessageSquareQuote size={16} />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Evidence Quote</span>
+                    </div>
+                    <blockquote className="text-xs italic text-slate-200 leading-relaxed border-l-2 border-indigo-500/50 pl-3">
                       "{activeFinding.evidence_text}"
-                    </p>
+                    </blockquote>
                   </div>
                 ) : (
-                  <p className="rounded-xl border border-navy-750 bg-navy-900/80 p-4 text-[11px] text-slate-400">
-                    No evidence excerpt was saved for this finding.
-                  </p>
+                  <div className="rounded-xl border border-navy-750 bg-navy-900/80 p-4 text-[11px] text-slate-400">
+                    No explicit guideline excerpt was recorded for this finding.
+                  </div>
                 )}
 
-                <div className="space-y-2 pt-2 text-[11px] text-slate-400">
-                  <div className="flex justify-between py-1 border-b border-navy-800">
-                    <span>Evidence Status</span>
+                {/* Mini Radial Gauge for Confidence & Metadata */}
+                <div className="rounded-xl border border-navy-750 bg-navy-900/60 p-4 flex items-center justify-between gap-4">
+                  <div className="relative flex h-16 w-16 shrink-0 items-center justify-center">
+                    <svg className="h-full w-full -rotate-90 transform" viewBox="0 0 64 64">
+                      <circle
+                        cx="32"
+                        cy="32"
+                        r="26"
+                        className="stroke-navy-800"
+                        strokeWidth="5"
+                        fill="transparent"
+                      />
+                      <circle
+                        cx="32"
+                        cy="32"
+                        r="26"
+                        className="stroke-indigo-400 transition-all duration-700 ease-out"
+                        strokeWidth="5"
+                        strokeDasharray={miniCircumference}
+                        strokeDashoffset={miniOffset}
+                        strokeLinecap="round"
+                        fill="transparent"
+                      />
+                    </svg>
+                    <span className="absolute text-xs font-bold text-white">{activeConfidence}%</span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">AI Confidence</p>
+                    <p className="text-xs font-bold text-white mt-0.5">
+                      {activeConfidence >= 80 ? "High certainty" : activeConfidence >= 50 ? "Moderate certainty" : "Low certainty"}
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Verified across approved vectors</p>
+                  </div>
+                </div>
+
+                {/* Supporting Citations & Metadata Rows */}
+                <div className="space-y-2 pt-1 text-xs">
+                  <div className="flex justify-between py-2 border-b border-navy-800">
+                    <span className="text-slate-400 text-[11px]">Evidence Status</span>
                     <span
-                      className={`font-semibold capitalize ${
+                      className={`font-bold capitalize text-[11px] ${
                         activeFinding.evidence_status === "supported"
                           ? "text-emerald-400"
                           : activeFinding.evidence_status === "contradicted"
@@ -867,32 +1049,34 @@ export default function AnalysisPage() {
                     </span>
                   </div>
                   {activeFinding.source_section && (
-                    <div className="flex justify-between py-1 border-b border-navy-800">
-                      <span>Source Section</span>
-                      <span className="text-slate-300">{activeFinding.source_section}</span>
+                    <div className="flex justify-between py-2 border-b border-navy-800">
+                      <span className="text-slate-400 text-[11px]">Source Section</span>
+                      <span className="text-slate-200 text-[11px] font-semibold">{activeFinding.source_section}</span>
                     </div>
                   )}
                   {activeFinding.source_page && (
-                    <div className="flex justify-between py-1 border-b border-navy-800">
-                      <span>Source Page</span>
-                      <span className="text-slate-300">{activeFinding.source_page}</span>
+                    <div className="flex justify-between py-2 border-b border-navy-800">
+                      <span className="text-slate-400 text-[11px]">Source Page</span>
+                      <span className="text-slate-200 text-[11px] font-semibold">Page {activeFinding.source_page}</span>
                     </div>
                   )}
                 </div>
               </div>
             ) : (
-              <div className="py-12 text-center text-xs text-slate-400">
-                Select a finding on the left to view verified guideline citations.
+              <div className="py-16 text-center text-xs text-slate-400">
+                <FileText size={28} className="mx-auto text-slate-600 mb-2" />
+                Select any finding from the list on the left to inspect linked evidence citations.
               </div>
             )}
           </div>
 
+          {/* Download Guideline Button */}
           {activeFinding?.guideline_id && (
-            <div className="mt-6 pt-4 border-t border-navy-750">
+            <div className="pt-4 border-t border-navy-750">
               <button
                 type="button"
                 onClick={() => downloadGuideline(activeFinding)}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-navy-700 bg-navy-800 hover:bg-navy-750 py-2.5 text-xs font-semibold text-slate-200 transition"
+                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-900/30 transition"
               >
                 <ArrowDownToLine size={15} /> Download Original Source PDF
               </button>

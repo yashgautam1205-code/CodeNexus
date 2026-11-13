@@ -79,7 +79,7 @@ export function EmptyState({ title, description, action }) {
 
 export function Card({ children, className = "" }) {
   return (
-    <section className={`rounded-2xl border border-navy-700/60 bg-navy-850 p-5 shadow-lg shadow-black/20 ${className}`}>
+    <section className={`glass-card p-5 ${className}`}>
       {children}
     </section>
   );

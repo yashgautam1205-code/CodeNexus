@@ -81,9 +81,11 @@ export default function LoginPage() {
 
 export function AuthShell({ eyebrow, title, description, children }) {
   return (
-    <div className="grid min-h-screen bg-navy-900 lg:grid-cols-[1.1fr_.9fr]">
+    <div className="relative grid min-h-screen overflow-hidden bg-[#050B18]/85 lg:grid-cols-[1.1fr_.9fr]">
       {/* Left hero banner */}
-      <div className="hidden flex-col justify-between bg-navy-950 p-12 text-white border-r border-navy-800/80 lg:flex">
+      <div className="relative isolate hidden flex-col justify-between overflow-hidden border-r border-blue-200/[0.08] bg-[#08152B]/45 p-12 text-white backdrop-blur-sm lg:flex">
+        <div aria-hidden="true" className="pointer-events-none absolute -left-32 top-1/4 -z-10 h-96 w-96 rounded-full bg-blue-600/15 blur-3xl" />
+        <div aria-hidden="true" className="pointer-events-none absolute -bottom-40 right-0 -z-10 h-96 w-96 rounded-full bg-violet-500/10 blur-3xl" />
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/30">
             <div className="relative">
@@ -110,8 +112,9 @@ export function AuthShell({ eyebrow, title, description, children }) {
       </div>
 
       {/* Right form card */}
-      <div className="grid place-items-center px-5 py-10">
-        <div className="w-full max-w-md rounded-2xl border border-navy-700/80 bg-navy-850 p-7 shadow-2xl sm:p-9">
+      <div className="relative grid place-items-center px-5 py-10">
+        <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 h-[min(70vw,520px)] w-[min(70vw,520px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-600/[0.07] blur-3xl" />
+        <div className="glass-card relative w-full max-w-md p-7 shadow-[0_24px_80px_rgba(0,0,0,0.38)] sm:p-9">
           <div className="mb-6 lg:hidden flex items-center gap-2.5 font-bold text-white text-base">
             <Shield className="text-blue-400" size={20} />
             <span>BrandGuard AI</span>
