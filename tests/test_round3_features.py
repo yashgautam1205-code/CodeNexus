@@ -355,6 +355,9 @@ def test_review_assignments_are_tenant_scoped_and_restrict_assigned_reviewers(
     assert analytics.status_code == 200
     assert analytics.json()["trend_granularity"] == "weekly"
     assert analytics.json()["review_assignment_statistics"]["completed"] == 1
+    assert analytics.json()["review_assignment_statistics"]["by_resource_type"][
+        "content"
+    ]["completed"] == 1
     workload = next(
         reviewer
         for reviewer in analytics.json()["reviewer_workload"]

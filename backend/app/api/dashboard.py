@@ -61,6 +61,34 @@ def _reviewer_resource_ids(
     )
 
 
+def _review_assignment_type_query(
+    organization_id: str,
+    cutoff: datetime,
+    reviewer_id: str | None,
+):
+    resource_type = case(
+        (ReviewAssignment.content_submission_id.is_not(None), "content"),
+        (ReviewAssignment.visual_analysis_id.is_not(None), "visual"),
+        else_="claim",
+    )
+    conditions = [
+        ReviewAssignment.organization_id == organization_id,
+        ReviewAssignment.assigned_at >= cutoff,
+    ]
+    if reviewer_id:
+        conditions.append(ReviewAssignment.reviewer_id == reviewer_id)
+
+    return (
+        select(
+            resource_type.label("resource_type"),
+            ReviewAssignment.status,
+            func.count(),
+        )
+        .where(*conditions)
+        .group_by(resource_type, ReviewAssignment.status)
+    )
+
+
 @router.get("/overview", response_model=DashboardOverview)
 def dashboard_overview(
     days: int = Query(default=30, ge=1, le=365),
@@ -655,32 +683,7 @@ def dashboard_analytics(
     for status in ("pending", "completed", "cancelled"):
         review_assignment_statistics.setdefault(status, 0)
     assignment_type_rows = db.execute(
-        select(
-            case(
-                (ReviewAssignment.content_submission_id.is_not(None), "content"),
-                (ReviewAssignment.visual_analysis_id.is_not(None), "visual"),
-                else_="claim",
-            ),
-            ReviewAssignment.status,
-            func.count(),
-        )
-        .where(
-            ReviewAssignment.organization_id == user.organization_id,
-            ReviewAssignment.assigned_at >= cutoff,
-            *(
-                [ReviewAssignment.reviewer_id == reviewer_id]
-                if reviewer_id
-                else []
-            ),
-        )
-        .group_by(
-            case(
-                (ReviewAssignment.content_submission_id.is_not(None), "content"),
-                (ReviewAssignment.visual_analysis_id.is_not(None), "visual"),
-                else_="claim",
-            ),
-            ReviewAssignment.status,
-        )
+        _review_assignment_type_query(user.organization_id, cutoff, reviewer_id)
     ).all()
     assignments_by_resource = {
         resource_type: {"pending": 0, "completed": 0, "cancelled": 0}
